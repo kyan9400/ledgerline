@@ -24,7 +24,8 @@ data class ReconcileReport(
  * - each bank's settlement account holds what has settled through it;
  * - what the bank has received is exactly the payouts it accepted, once each, with the same amounts,
  *   settled or returned as we have them;
- * - each payment's refunded amount is the sum of its refunds (in progress or done).
+ * - each payment's refunded amount is the sum of its refunds (in progress or done);
+ * - each payment's, refund's and payout's version and state are its last event's, in the event log.
  *
  * The ledger, the bank and this database can't be read at one instant, so the checks that compare them
  * run only when nothing is in progress (`quiet`); the rest always run.
@@ -55,8 +56,18 @@ class Reconcile(
                     + (SELECT count(*) FROM refunds WHERE state = 'refunding' AND next_attempt_at IS NULL)
                     + (SELECT count(*) FROM payouts WHERE state IN ('reserving', 'submitting', 'submitted', 'settling', 'returning') AND next_attempt_at IS NULL)""",
         )
+        // Each row's version is the last event of its stream in the event log, and its state is that event's.
+        val eventLog = listOf("payments" to "payment", "refunds" to "refund", "payouts" to "payout").sumOf { (table, entity) ->
+            count(
+                """SELECT count(*) FROM $table r FULL JOIN (
+                     SELECT DISTINCT ON (stream) substr(stream, ${entity.length + 2})::uuid AS id, version, type
+                     FROM events WHERE stream LIKE '$entity-%' ORDER BY stream, version DESC) e USING (id)
+                   WHERE r.id IS NULL OR e.id IS NULL OR r.version <> e.version OR e.type <> '$entity.' || r.state""",
+            )
+        }
         val violations = linkedMapOf(
             "stuck" to stuck,
+            "event_log_not_matching_state" to eventLog,
             "refunds_not_summing" to count(
                 """SELECT count(*) FROM payments p WHERE p.refunded <>
                      (SELECT coalesce(sum(r.amount), 0) FROM refunds r WHERE r.payment_id = p.id AND r.state IN ('refunding', 'refunded'))""",

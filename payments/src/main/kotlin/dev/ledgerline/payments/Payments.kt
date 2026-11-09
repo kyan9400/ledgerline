@@ -4,6 +4,7 @@ import dev.ledgerline.platform.Outbox
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.transaction.support.TransactionTemplate
+import tools.jackson.databind.json.JsonMapper
 import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.Clock
@@ -34,10 +35,11 @@ class Payments(
     private val clock: Clock,
     private val authorisationTtl: Duration,
     outbox: Outbox,
+    json: JsonMapper,
     meters: MeterRegistry,
 ) {
-    val payments = Machine(db, outbox, clock, meters, "payments", "payment", PAYMENT_STEPS) { payment(it) }
-    val refunds = Machine(db, outbox, clock, meters, "refunds", "refund", setOf("refunding")) { refund(it) }
+    val payments = Machine(db, outbox, json, clock, meters, "payments", "payment", PAYMENT_STEPS) { payment(it) }
+    val refunds = Machine(db, outbox, json, clock, meters, "refunds", "refund", setOf("refunding")) { refund(it) }
 
     // --- intents (in the idempotency layer's transaction) --------------------------------------------
 

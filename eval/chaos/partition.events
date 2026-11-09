@@ -1,0 +1,8 @@
+0s load starts: partition, 120s, 15 flows/s, seed 20261109
+20s network cut: ledger
+40s network back: ledger
+70s network cut: otherbank
+90s network back: otherbank
+121s load done
+123s verifying
+158s verified:   "ok" : true,

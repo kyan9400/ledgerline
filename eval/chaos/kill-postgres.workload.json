@@ -1,0 +1,27 @@
+{
+  "run" : "chaos-mw99328h",
+  "flows" : 1800,
+  "requests" : 3667,
+  "by_kind_and_status" : {
+    "authorise 201" : 1436,
+    "capture 200" : 1084,
+    "payout 202" : 364,
+    "refund 201" : 566,
+    "void 200" : 217
+  },
+  "sent_twice_at_once" : 384,
+  "attempts" : 6448,
+  "requests_retried" : 824,
+  "unresolved" : 0,
+  "errors_seen" : {
+    "http_500" : 374,
+    "http_503" : 2023
+  },
+  "ms_to_answer" : {
+    "p50" : 13,
+    "p95" : 10669,
+    "p99" : 18070,
+    "max" : 23932
+  },
+  "log" : "/out/kill-postgres.log.json"
+}

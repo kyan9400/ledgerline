@@ -1,0 +1,27 @@
+{
+  "run" : "chaos-mw99aq7j",
+  "flows" : 1800,
+  "requests" : 3696,
+  "by_kind_and_status" : {
+    "authorise 201" : 1217,
+    "authorise 202" : 212,
+    "capture 200" : 1074,
+    "payout 202" : 371,
+    "refund 201" : 605,
+    "void 200" : 217
+  },
+  "sent_twice_at_once" : 369,
+  "attempts" : 4136,
+  "requests_retried" : 396,
+  "unresolved" : 0,
+  "errors_seen" : {
+    "http_503" : 71
+  },
+  "ms_to_answer" : {
+    "p50" : 10,
+    "p95" : 2005,
+    "p99" : 2173,
+    "max" : 19455
+  },
+  "log" : "/out/partition.log.json"
+}

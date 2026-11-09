@@ -47,8 +47,9 @@ class PaymentsApplication {
         clock: Clock,
         @Value("\${payments.authorisation-ttl}") ttl: Duration,
         outbox: Outbox,
+        json: JsonMapper,
         meters: MeterRegistry,
-    ) = Payments(db, tx, ledger, accounts, clock, ttl, outbox, meters)
+    ) = Payments(db, tx, ledger, accounts, clock, ttl, outbox, json, meters)
 
     @Bean
     fun payouts(
@@ -59,8 +60,9 @@ class PaymentsApplication {
         banks: Banks,
         clock: Clock,
         outbox: Outbox,
+        json: JsonMapper,
         meters: MeterRegistry,
-    ) = Payouts(db, tx, ledger, accounts, banks.byName, clock, outbox, meters)
+    ) = Payouts(db, tx, ledger, accounts, banks.byName, clock, outbox, json, meters)
 
     @Bean
     fun worker(

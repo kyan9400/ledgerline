@@ -1,0 +1,26 @@
+# For chaos runs (chaos/run.sh), on top of compose.yaml: the payments service reaches the ledger and the
+# other bank through Toxiproxy, which can slow, cut or drop its connections on command.
+#
+#   docker compose -f deploy/compose.yaml -f deploy/chaos.yaml --env-file deploy/.env up -d
+services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.13.0
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    cpus: 0.5
+    mem_limit: 64m
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+    volumes:
+      - ./toxiproxy.json:/config/toxiproxy.json:ro
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [internal]
+
+  payments:
+    environment:
+      LEDGER_URL: http://toxiproxy:18080
+      OTHERBANK_URL: http://toxiproxy:18090
+    depends_on:
+      toxiproxy: { condition: service_started }

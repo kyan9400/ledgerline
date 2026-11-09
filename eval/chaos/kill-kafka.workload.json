@@ -1,0 +1,24 @@
+{
+  "run" : "chaos-mw996vs0",
+  "flows" : 1800,
+  "requests" : 3691,
+  "by_kind_and_status" : {
+    "authorise 201" : 1431,
+    "capture 200" : 1090,
+    "payout 202" : 369,
+    "refund 201" : 597,
+    "void 200" : 204
+  },
+  "sent_twice_at_once" : 379,
+  "attempts" : 4070,
+  "requests_retried" : 379,
+  "unresolved" : 0,
+  "errors_seen" : { },
+  "ms_to_answer" : {
+    "p50" : 10,
+    "p95" : 17,
+    "p99" : 24,
+    "max" : 60
+  },
+  "log" : "/out/kill-kafka.log.json"
+}

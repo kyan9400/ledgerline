@@ -8,7 +8,6 @@ import tools.jackson.databind.json.JsonMapper
 import java.sql.Connection
 import java.sql.DriverManager
 import java.time.Duration
-import kotlin.system.exitProcess
 
 /**
  * Rebuilds the books from Kafka alone and compares them with the services' databases:
@@ -23,11 +22,10 @@ import kotlin.system.exitProcess
  * deleted the start, or the topic was lost and started again) can't be rebuilt: it is counted apart, as
  * `streams_starting_late`, and not compared. Run it when the outboxes have drained (it says if not).
  *
- *   KAFKA=kafka:9092 LEDGER_DB=jdbc:postgresql://postgres:5432/ledger PAYMENTS_DB=jdbc:postgresql://postgres:5432/payments \
- *   DB_USER=... DB_PASSWORD=... checker
+ *   checker check    (env: KAFKA, LEDGER_DB, LEDGER_DB_USER, LEDGER_DB_PASSWORD, and optionally
+ *                     PAYMENTS_DB, PAYMENTS_DB_USER, PAYMENTS_DB_PASSWORD)
  */
-fun main() {
-    val env = System.getenv()
+fun check(env: Map<String, String>): Pair<Map<String, Any>, Boolean> {
     val kafka = env.getValue("KAFKA")
     val json = JsonMapper.builder().build()
     val report = linkedMapOf<String, Any>()
@@ -94,8 +92,7 @@ fun main() {
         }
     }
     report["ok"] = ok
-    println(json.writerWithDefaultPrettyPrinter().writeValueAsString(report))
-    exitProcess(if (ok) 0 else 1)
+    return report to ok
 }
 
 class Rebuilt(var version: Int = 0, val state: MutableMap<String, Any> = mutableMapOf(), var late: Boolean = false)
@@ -152,10 +149,10 @@ fun rebuild(
     return Rebuild(streams, records, duplicates, gaps, streams.values.sumOf { it.version })
 }
 
-private fun connect(url: String, user: String, password: String): Connection = DriverManager.getConnection(url, user, password)
+fun connect(url: String, user: String, password: String): Connection = DriverManager.getConnection(url, user, password)
 
-private fun count(db: Connection, sql: String): Long = db.createStatement().use { st -> st.executeQuery(sql).use { it.next(); it.getLong(1) } }
+fun count(db: Connection, sql: String): Long = db.createStatement().use { st -> st.executeQuery(sql).use { it.next(); it.getLong(1) } }
 
-private fun <T> query(db: Connection, sql: String, row: (java.sql.ResultSet) -> T): List<T> = db.createStatement().use { st ->
+fun <T> query(db: Connection, sql: String, row: (java.sql.ResultSet) -> T): List<T> = db.createStatement().use { st ->
     st.executeQuery(sql).use { rs -> buildList { while (rs.next()) add(row(rs)) } }
 }

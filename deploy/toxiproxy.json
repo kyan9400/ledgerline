@@ -1,0 +1,4 @@
+[
+  {"name": "ledger", "listen": "0.0.0.0:18080", "upstream": "ledger:8080", "enabled": true},
+  {"name": "otherbank", "listen": "0.0.0.0:18090", "upstream": "otherbank:8090", "enabled": true}
+]

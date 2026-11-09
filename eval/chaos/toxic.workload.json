@@ -1,0 +1,30 @@
+{
+  "run" : "chaos-mw99ew6m",
+  "flows" : 1800,
+  "requests" : 3661,
+  "by_kind_and_status" : {
+    "authorise 201" : 829,
+    "authorise 202" : 603,
+    "capture 200" : 1007,
+    "capture 202" : 84,
+    "payout 202" : 368,
+    "refund 201" : 562,
+    "refund 202" : 5,
+    "void 200" : 185,
+    "void 202" : 18
+  },
+  "sent_twice_at_once" : 405,
+  "attempts" : 4558,
+  "requests_retried" : 540,
+  "unresolved" : 0,
+  "errors_seen" : {
+    "http_503" : 492
+  },
+  "ms_to_answer" : {
+    "p50" : 15,
+    "p95" : 2165,
+    "p99" : 3890,
+    "max" : 16477
+  },
+  "log" : "/out/toxic.log.json"
+}

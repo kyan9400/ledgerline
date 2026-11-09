@@ -1,0 +1,6 @@
+0s load starts: kill-kafka, 120s, 15 flows/s, seed 20261109
+20s kill -9 kafka
+70s start kafka
+120s load done
+122s verifying
+142s verified:   "ok" : true,

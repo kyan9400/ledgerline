@@ -1,0 +1,32 @@
+{
+  "run" : "chaos-mw99ou48",
+  "flows" : 1800,
+  "requests" : 3633,
+  "by_kind_and_status" : {
+    "authorise 201" : 1236,
+    "authorise 202" : 188,
+    "capture 200" : 1073,
+    "payout 202" : 376,
+    "refund 201" : 565,
+    "void 200" : 194,
+    "void 202" : 1
+  },
+  "sent_twice_at_once" : 381,
+  "attempts" : 8880,
+  "requests_retried" : 1221,
+  "unresolved" : 0,
+  "errors_seen" : {
+    "ConnectException" : 1243,
+    "HttpConnectTimeoutException" : 157,
+    "IOException" : 3,
+    "http_500" : 235,
+    "http_503" : 3228
+  },
+  "ms_to_answer" : {
+    "p50" : 45,
+    "p95" : 23468,
+    "p99" : 36342,
+    "max" : 44695
+  },
+  "log" : "/out/mixed.log.json"
+}

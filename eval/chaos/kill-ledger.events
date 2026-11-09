@@ -1,0 +1,10 @@
+0s load starts: kill-ledger, 120s, 15 flows/s, seed 20261109
+20s kill -9 ledger
+30s start ledger
+55s kill -9 ledger
+65s start ledger
+91s kill -9 ledger
+100s start ledger
+152s load done
+154s verifying
+175s verified:   "ok" : true,

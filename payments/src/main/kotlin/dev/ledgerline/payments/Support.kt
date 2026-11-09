@@ -120,11 +120,13 @@ sealed interface Step {
  * Moves the rows of one table (payments, refunds, payouts) from state to state. A change is conditional
  * on the version it was decided from, so when two drivers race (the request and the worker, after a
  * lease ran out) only one change lands; both made the same ledger call with the same key, and got the
- * same answer. Each change writes an event to the outbox in the same transaction.
+ * same answer. Each change appends an event to the service's event log, and puts it in the outbox, in
+ * the same transaction.
  */
 class Machine(
     private val db: JdbcClient,
     private val outbox: Outbox,
+    private val json: JsonMapper,
     private val clock: Clock,
     private val meters: MeterRegistry,
     private val table: String,
@@ -145,15 +147,23 @@ class Machine(
             .param("id", id).param("v", fromVersion)
         set.forEach { (k, v) -> sql.param(k, if (v is java.time.Instant) Timestamp.from(v) else v) }
         if (sql.update() == 0) return false
-        outbox.add(PAYMENTS_TOPIC, "$entity-$id", fromVersion + 1, "$entity.$to", snapshot(id), now)
+        record(id, fromVersion + 1, to, now)
         meters.counter("payments.transitions", "entity", entity, "to", to).increment()
         return true
     }
 
     /** The first event of a new row (version 1), in the caller's transaction. */
     fun created(id: UUID, state: String) {
-        outbox.add(PAYMENTS_TOPIC, "$entity-$id", 1, "$entity.$state", snapshot(id), clock.instant())
+        record(id, 1, state, clock.instant())
         meters.counter("payments.transitions", "entity", entity, "to", state).increment()
+    }
+
+    private fun record(id: UUID, version: Int, state: String, at: java.time.Instant) {
+        val stream = "$entity-$id"
+        val data = json.writeValueAsString(snapshot(id))
+        db.sql("INSERT INTO events (stream, version, type, data, recorded_at) VALUES (:s, :v, :t, :d::jsonb, :at)")
+            .param("s", stream).param("v", version).param("t", "$entity.$state").param("d", data).param("at", Timestamp.from(at)).update()
+        outbox.addJson(PAYMENTS_TOPIC, stream, version, "$entity.$state", data, at)
     }
 
     fun retry(id: UUID, version: Int, attempts: Int, error: String) {

@@ -1,0 +1,7 @@
+0s load starts: kafka-loss, 120s, 15 flows/s, seed 20261109
+40s Kafka loses its data: services stopped, Kafka's volume deleted
+54s Kafka back, empty: refilling the outboxes from the event logs
+87s services started
+176s load done
+178s verifying
+201s verified:   "ok" : true,

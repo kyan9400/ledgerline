@@ -1,0 +1,30 @@
+{
+  "run" : "chaos-mw98tm9g",
+  "flows" : 1800,
+  "requests" : 3698,
+  "by_kind_and_status" : {
+    "authorise 201" : 628,
+    "authorise 202" : 814,
+    "capture 200" : 853,
+    "capture 202" : 238,
+    "payout 202" : 358,
+    "refund 201" : 507,
+    "refund 202" : 91,
+    "void 200" : 179,
+    "void 202" : 30
+  },
+  "sent_twice_at_once" : 396,
+  "attempts" : 4741,
+  "requests_retried" : 667,
+  "unresolved" : 0,
+  "errors_seen" : {
+    "http_503" : 647
+  },
+  "ms_to_answer" : {
+    "p50" : 435,
+    "p95" : 2162,
+    "p99" : 3617,
+    "max" : 28892
+  },
+  "log" : "/out/kill-ledger.log.json"
+}

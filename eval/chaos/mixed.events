@@ -1,0 +1,12 @@
+0s load starts: mixed, 120s, 15 flows/s, seed 20261109
+15s kill -9 postgres
+23s start postgres
+40s kill -9 kafka
+55s start kafka
+65s toxic on ledger: limit_data {"bytes": 150}
+81s toxics removed
+90s kill -9 payments
+98s start payments
+138s load done
+140s verifying
+166s verified:   "ok" : true,

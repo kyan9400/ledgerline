@@ -1,0 +1,7 @@
+{
+  "service" : "ledger",
+  "topic" : "ledger.events",
+  "outbox_rows_replaced" : 0,
+  "events_queued" : 498042,
+  "seconds" : 8.323160737
+}

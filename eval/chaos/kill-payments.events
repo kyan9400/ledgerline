@@ -1,0 +1,10 @@
+0s load starts: kill-payments, 120s, 15 flows/s, seed 20261109
+20s kill -9 payments
+30s start payments
+55s kill -9 payments
+65s start payments
+90s kill -9 payments
+100s start payments
+164s load done
+166s verifying
+190s verified:   "ok" : true,

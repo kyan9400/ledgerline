@@ -1,0 +1,14 @@
+0s load starts: toxic, 120s, 15 flows/s, seed 20261109
+10s toxic on ledger: latency {"latency": 300, "jitter": 200}
+35s toxics removed
+40s toxic on ledger: limit_data {"bytes": 150}
+60s toxics removed
+65s toxic on ledger: reset_peer {"timeout": 50}
+80s toxics removed
+85s toxic on ledger: timeout {"timeout": 3000}
+100s toxics removed
+100s toxic on otherbank: timeout {"timeout": 2500}
+115s toxics removed
+147s load done
+149s verifying
+187s verified:   "ok" : true,

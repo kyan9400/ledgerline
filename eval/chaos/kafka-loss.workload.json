@@ -1,0 +1,30 @@
+{
+  "run" : "chaos-mw99jpbn",
+  "flows" : 1800,
+  "requests" : 3730,
+  "by_kind_and_status" : {
+    "authorise 201" : 1441,
+    "authorise 202" : 4,
+    "capture 200" : 1105,
+    "payout 202" : 355,
+    "refund 201" : 608,
+    "void 200" : 217
+  },
+  "sent_twice_at_once" : 386,
+  "attempts" : 22560,
+  "requests_retried" : 2058,
+  "unresolved" : 0,
+  "errors_seen" : {
+    "ConnectException" : 6221,
+    "HttpConnectTimeoutException" : 1041,
+    "http_500" : 33,
+    "http_503" : 11149
+  },
+  "ms_to_answer" : {
+    "p50" : 1253,
+    "p95" : 91182,
+    "p99" : 111281,
+    "max" : 128349
+  },
+  "log" : "/out/kafka-loss.log.json"
+}

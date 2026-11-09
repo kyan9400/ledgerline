@@ -1,0 +1,34 @@
+{
+  "run" : "chaos-mw98y6mp",
+  "flows" : 1800,
+  "requests" : 3700,
+  "by_kind_and_status" : {
+    "authorise 201" : 1417,
+    "authorise 202" : 21,
+    "capture 200" : 1076,
+    "capture 202" : 10,
+    "payout 202" : 362,
+    "refund 201" : 593,
+    "refund 202" : 2,
+    "void 200" : 218,
+    "void 202" : 1
+  },
+  "sent_twice_at_once" : 370,
+  "attempts" : 22890,
+  "requests_retried" : 2405,
+  "unresolved" : 0,
+  "errors_seen" : {
+    "ConnectException" : 6017,
+    "HttpConnectTimeoutException" : 1829,
+    "IOException" : 233,
+    "http_500" : 29,
+    "http_503" : 10712
+  },
+  "ms_to_answer" : {
+    "p50" : 2194,
+    "p95" : 87501,
+    "p99" : 114255,
+    "max" : 136985
+  },
+  "log" : "/out/kill-payments.log.json"
+}

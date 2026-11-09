@@ -6,7 +6,7 @@ it as state machines and sagas, and every change reaches Kafka through a transac
 written in Kotlin and Spring Boot on PostgreSQL and Kafka. Each property it promises is checked by tests
 that try hard to break it.
 
-> Work in progress: stages 1 and 2 of 8 are done (see [the plan](#roadmap)). All accounts and money in
+> Work in progress: stages 1 to 3 of 8 are done (see [the plan](#roadmap)). All accounts and money in
 > it are made up.
 
 ```
@@ -123,9 +123,11 @@ refuses closed accounts. It keeps a journal, so a restart forgets nothing.
 
 ## Events: the outbox into Kafka
 
-A service writes each event to an `outbox` table **in the same database transaction as the change**, so
-an event is published if and only if its change commits. A relay sends the outbox to Kafka in order
-(an idempotent producer, `acks=all`) and deletes what Kafka has acknowledged.
+Each service keeps an **append-only event log** of its own: the ledger, of every account and transaction;
+the payments service, of every change of state of a payment, refund or payout. A database trigger refuses
+to change or delete it. Each event also goes to an `outbox` table, **in the same database transaction as
+the change**, so an event is published if and only if its change commits. A relay sends the outbox to
+Kafka in order (an idempotent producer, `acks=all`) and deletes what Kafka has acknowledged.
 
 - **Each stream stays in order.** Two changes to one account or payment lock the same row, so the
   second's outbox row is written only after the first commits. The relay reads in that order, and the
@@ -137,6 +139,9 @@ an event is published if and only if its change commits. A relay sends the outbo
   and it drains when Kafka is back.
 - **The whole history:** the ledger's events from before the outbox existed went through it too, so a
   consumer can rebuild every account from the start of the topic.
+- **Kafka isn't the system of record.** If Kafka loses its data, `checker republish` puts each
+  service's whole event log back in its outbox, in order, and the relays send it again. Writes pause
+  while it runs: it takes the event log and the relay's lock.
 - **The checker** ([`checker`](checker/src/main/kotlin/dev/ledgerline/checker/Checker.kt)) does exactly
   that. It rebuilds every account's balance and version from `ledger.events`, and every payment's,
   refund's and payout's state from `payments.events`, from Kafka alone. Then it compares them with the
@@ -183,6 +188,76 @@ simulated bank in the same JVM.
     bank paid that were also refunded.
 - **The API:** authorisations, partial captures, voids, expiry, refunds, refusals and idempotent
   replays; transfers, reversals, statements and paging; an append-only event log; a passing audit.
+
+## Chaos
+
+The tests above break things from inside a test. [`chaos/run.sh`](chaos/run.sh) breaks the running
+system, while a client keeps paying.
+
+- **The client** (`checker workload`) runs card payments and payouts at 15 flows a second for two
+  minutes: authorise, then capture all or part, void or leave; refunds; payouts. It behaves as a client
+  should:
+  - every write has an idempotency key;
+  - a request that gets no answer (a timeout, a refused connection, a 5xx, a 503) is sent again with the
+    same key, backing off, until it gets one;
+  - a tenth of its requests are sent twice at once.
+
+  It logs every request and every answer.
+- **The faults**, on a schedule, while the client runs:
+  - `kill -9` of the ledger, the payments service, PostgreSQL or Kafka;
+  - a service cut off the network;
+  - Kafka's data deleted.
+
+  [Toxiproxy](https://github.com/Shopify/toxiproxy) sits between the payments service and the ledger
+  and the bank. It slows the connections, cuts answers off after 150 bytes (the posting is made and the
+  answer is lost), resets them, or holds them open and silent.
+- **The proof** (`checker verify`), once everything is back:
+  - every request got an answer in the end, and all the answers for one key named the same resource;
+  - the payments, refunds and payouts the service has are exactly those the client was told of;
+  - each one has exactly the ledger postings its final state implies, once each. A captured payment
+    has one authorisation and one capture; a returned payout has one reservation and one return; a
+    declined payment has none.
+  - every balance is what those states imply;
+  - the reconciliation and the ledger's audit hold;
+  - both services' books rebuild from Kafka alone.
+
+| Scenario | What breaks | Requests (sent twice at once) | Failed tries, retried | Time to an answer: p50 / p95 / max | Verified |
+| --- | --- | --- | --- | --- | --- |
+| `baseline` | nothing | 3,691 (378) | 0 | 11 ms / 17 ms / 121 ms | all checks hold |
+| `kill-ledger` | the ledger killed (SIGKILL) 3 times, 10 s each | 3,698 (396) | 647 | 435 ms / 2.2 s / 28.9 s | all checks hold |
+| `kill-payments` | the payments service killed 3 times, mid-step | 3,700 (370) | 18,820 | 2.2 s / 87.5 s / 137.0 s | all checks hold |
+| `kill-postgres` | PostgreSQL killed twice: both services lose their database | 3,667 (384) | 2,397 | 13 ms / 10.7 s / 23.9 s | all checks hold |
+| `kill-kafka` | Kafka killed for 50 s | 3,691 (379) | 0 | 10 ms / 17 ms / 60 ms | all checks hold |
+| `partition` | the ledger, then the bank, cut off the network for 20 s | 3,696 (369) | 71 | 10 ms / 2.0 s / 19.5 s | all checks hold |
+| `toxic` | connections to the ledger slowed, cut mid-answer, reset, hung; the bank's hung | 3,661 (405) | 492 | 15 ms / 2.2 s / 16.5 s | all checks hold |
+| `kafka-loss` | Kafka loses all its data; refilled from the event logs | 3,730 (386) | 18,444 | 1.3 s / 91.2 s / 128.3 s | all checks hold |
+| `mixed` | PostgreSQL, Kafka and payments killed; answers cut | 3,633 (381) | 4,866 | 45 ms / 23.5 s / 44.7 s | all checks hold |
+
+Over 33,167 requests, 3,448 of them sent twice at once, nothing was lost and nothing was done twice
+([`eval/chaos`](eval/chaos): each scenario's report, the client's summary and the faults' timeline).
+
+- **A dead ledger** is hidden from the payments service's clients. Its account facts are cached, so an
+  authorisation is recorded at once (202), and the worker posts it when the ledger is back.
+- **A dead Kafka** isn't noticed at all: the outboxes grow, then drain.
+- **A dead PostgreSQL** is an outage for both services, of about the 10 s it takes to come back.
+- **Answers cut off mid-way** are the case the idempotency keys exist for: the posting was made, the
+  answer lost, and the retry lands on the first try's result.
+- **Kafka losing everything**, the incident from stage 2, is now one scenario among the others. With the
+  services stopped, `checker republish` put 498,042 ledger events and 319,931 payment events back in the
+  outboxes, in 8 s and 10 s, and the relays sent them again. Writes were down for 47 s in all.
+- **At least once, in practice:** in one run, killing the payments service between a batch's send and
+  its delete made the relay send 20 events twice. The checker, like any consumer, skipped them.
+
+The slow answers in `kill-payments` and `kafka-loss` are the price of outages, not of the design. In two
+minutes the payments service is down three times (in `kafka-loss`, writes are down for 47 s), and the
+clients' backlog meets a service that has just restarted. The run also found three things to fix:
+
+- **Slow restarts.** On one CPU the services took 14–15 s to start. They now start from a Java 25
+  ahead-of-time cache, made by a training run when the image is built, and take 7–8 s.
+- **A client that wasn't patient enough.** Waiting for a 202 to finish, it asked again every 200 ms, so
+  after an outage hundreds of clients' reads crowded out the writes. Now it backs off.
+- **Unanswered requests, the client's fault.** Requests sent twice near the end of a run were dropped,
+  because their executor had been shut down. They were the client's bug, and the proof caught them.
 
 ## Measured
 
@@ -261,9 +336,10 @@ recreating the container lost the topics.
 
 - **The ledger recovered completely.** It sent its whole history again from its event log, and the
   checker rebuilt all 1,059,836 events and 8,748 accounts from Kafka.
-- **The payments service couldn't.** It keeps the current state, not an event log, so its earlier
-  events are gone: Kafka is not a system of record.
-- **Next:** stage 3 gives the payments service an event log of its own.
+- **The payments service couldn't.** It kept only the current state, not an event log, so its earlier
+  events were gone: Kafka is not a system of record.
+- **Fixed in stage 3:** the payments service now has an event log of its own, and
+  [Kafka losing its data](#chaos) is one of the chaos scenarios.
 
 ## Running it
 
@@ -271,6 +347,13 @@ recreating the container lost the topics.
 cp deploy/.env.example deploy/.env      # set the passwords (openssl rand -hex 24)
 docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
 docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm checker   # rebuild the books from Kafka
+```
+
+A chaos run, against the stack above (with Toxiproxy added by `deploy/chaos.yaml`):
+
+```bash
+chaos/run.sh kill-payments          # or baseline, kill-ledger, kill-postgres, kill-kafka, partition, toxic, kafka-loss, mixed
+python chaos/table.py               # the table above, from eval/chaos
 ```
 
 The tests, with a throwaway PostgreSQL and Kafka in Docker:
@@ -288,7 +371,8 @@ Or with your own: `LEDGERLINE_TEST_DB=jdbc:postgresql://host:5432 LEDGERLINE_TES
 | [`payments`](payments) | card payments, refunds, payouts; the worker; reconciliation |
 | [`platform`](platform) | shared by the services: the outbox and its relay, load shedding |
 | [`otherbank`](otherbank) | the simulated other bank |
-| [`checker`](checker) | rebuilds the books from Kafka and compares |
+| [`checker`](checker) | the tools: rebuild the books from Kafka and compare (`check`), refill Kafka from the event logs (`republish`), the chaos client (`workload`) and its proof (`verify`) |
+| [`chaos`](chaos/run.sh) | the chaos runs |
 
 The stack is Kotlin 2.3, Spring Boot 4.1 (Spring MVC on virtual threads, JdbcClient, Flyway), Java 25,
 PostgreSQL 18 and Kafka 4.4 (KRaft, one broker).
@@ -299,7 +383,7 @@ PostgreSQL 18 and Kafka 4.4 (KRaft, one broker).
 | --- | --- |
 | 1. Ledger core | done |
 | 2. Payments | done: card payments, refunds and payouts as sagas; an outbox into Kafka |
-| 3. Chaos | Services, Kafka and the database killed and networks cut mid-payment, with a checker proving nothing is lost or duplicated; an event log for the payments service, so Kafka can be rebuilt from it |
+| 3. Chaos | done: services, Kafka and the database killed, networks cut and answers lost mid-payment, with a proof that nothing was lost or done twice; an event log for the payments service |
 | 4. Fraud | A simulator with known fraud, real-time features from Kafka, a model scored against the truth |
 | 5. Analytics | ClickHouse fed from Kafka; a Vue 3 dashboard |
 | 6. Merchants | A gRPC API, signed webhooks, an SDK |

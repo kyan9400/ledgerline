@@ -1,0 +1,7 @@
+{
+  "service" : "payments",
+  "topic" : "payments.events",
+  "outbox_rows_replaced" : 3,
+  "events_queued" : 319931,
+  "seconds" : 10.317126108
+}

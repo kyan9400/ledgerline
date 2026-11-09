@@ -10,5 +10,5 @@ dependencies {
 }
 
 application {
-    mainClass = "dev.ledgerline.checker.CheckerKt"
+    mainClass = "dev.ledgerline.checker.MainKt"
 }

@@ -1,0 +1,8 @@
+0s load starts: kill-postgres, 120s, 15 flows/s, seed 20261109
+30s kill -9 postgres
+41s start postgres
+80s kill -9 postgres
+90s start postgres
+120s load done
+122s verifying
+140s verified:   "ok" : true,

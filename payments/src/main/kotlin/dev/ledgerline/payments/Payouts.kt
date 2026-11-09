@@ -4,6 +4,7 @@ import dev.ledgerline.platform.Outbox
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.transaction.support.TransactionTemplate
+import tools.jackson.databind.json.JsonMapper
 import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.Clock
@@ -34,9 +35,10 @@ class Payouts(
     private val banks: Map<String, BankClient>,
     private val clock: Clock,
     outbox: Outbox,
+    json: JsonMapper,
     meters: MeterRegistry,
 ) {
-    val payouts = Machine(db, outbox, clock, meters, "payouts", "payout", PAYOUT_STEPS) { payout(it) }
+    val payouts = Machine(db, outbox, json, clock, meters, "payouts", "payout", PAYOUT_STEPS) { payout(it) }
 
     fun createIn(req: PayoutRequest): Payout {
         if (req.amount <= 0) throw Invalid("amount must be positive")
