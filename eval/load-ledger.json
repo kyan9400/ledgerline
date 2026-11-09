@@ -1,0 +1,61 @@
+{
+ "steps": [
+  {
+   "scenario": "spread_100",
+   "target_rps": 100,
+   "requested_rps": 100.01666666666667,
+   "done_rps": 100.01666666666667,
+   "shed_share": 0,
+   "p50_ms": 4.102316,
+   "p95_ms": 9.872364,
+   "p99_ms": 37.18816,
+   "failed": 0
+  },
+  {
+   "scenario": "spread_250",
+   "target_rps": 250,
+   "requested_rps": 250.01666666666668,
+   "done_rps": 250.01666666666668,
+   "shed_share": 0,
+   "p50_ms": 3.187693,
+   "p95_ms": 11.368848,
+   "p99_ms": 41.6294,
+   "failed": 0
+  },
+  {
+   "scenario": "spread_500",
+   "target_rps": 500,
+   "requested_rps": 499.6,
+   "done_rps": 439.9,
+   "shed_share": 0.11949559647718175,
+   "p50_ms": 237.22951899999998,
+   "p95_ms": 332.01268575,
+   "p99_ms": 391.8196795,
+   "failed": 0
+  },
+  {
+   "scenario": "spread_1000",
+   "target_rps": 1000,
+   "requested_rps": 998.15,
+   "done_rps": 428.96666666666664,
+   "shed_share": 0.5702382741404932,
+   "p50_ms": 205.359772,
+   "p95_ms": 326.4610972,
+   "p99_ms": 400.77411852,
+   "failed": 0
+  },
+  {
+   "scenario": "hot",
+   "target_rps": 250,
+   "requested_rps": 250.01666666666668,
+   "done_rps": 249.96666666666667,
+   "shed_share": 0.0001999866675554963,
+   "p50_ms": 3.169454,
+   "p95_ms": 10.254142,
+   "p99_ms": 70.885431,
+   "failed": 0
+  }
+ ],
+ "refused_insufficient_funds": 0,
+ "dropped_iterations": 138
+}

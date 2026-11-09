@@ -1,0 +1,55 @@
+name: ledger
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: ledger
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_DB: ledger_test
+          POSTGRES_USER: ledger
+          POSTGRES_PASSWORD: ledger
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ledger -d ledger_test" --health-interval 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Build and test (unit, API, concurrency and property tests against PostgreSQL)
+        env:
+          LEDGER_TEST_DB_URL: jdbc:postgresql://127.0.0.1:5432/ledger_test
+        run: ./gradlew --no-daemon --console=plain build
+      - name: The property and concurrency tests ran (not skipped)
+        run: |
+          for t in PropertyTest ConcurrencyTest ApiTest; do
+            grep -q 'tests="[1-9]' build/test-results/test/TEST-dev.ledgerline.ledger.$t.xml
+            ! grep -q '<skipped' build/test-results/test/TEST-dev.ledgerline.ledger.$t.xml
+          done
+
+  image:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t ledgerline-ledger:ci ledger
+      - name: The image runs as a non-root user
+        run: test "$(docker inspect -f '{{.Config.User}}' ledgerline-ledger:ci)" = "10001:10001"

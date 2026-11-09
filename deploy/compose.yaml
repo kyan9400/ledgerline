@@ -1,0 +1,64 @@
+# Ledgerline on one host.
+#
+#   cp deploy/.env.example deploy/.env    # then set the passwords
+#   docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
+#
+# Nothing is published on the host's ports; reach the services through the Compose network.
+name: ledgerline
+
+x-labels: &labels
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    cpus: 1.0
+    mem_limit: 768m
+    restart: unless-stopped
+    labels: *labels
+    environment:
+      POSTGRES_DB: ledger
+      POSTGRES_USER: ledger
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    command: ["-c", "max_connections=100", "-c", "shared_buffers=192MB"]
+    volumes:
+      - pg_data:/var/lib/postgresql
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledger -d ledger"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [internal]
+
+  ledger:
+    image: ledgerline-ledger:${LEDGERLINE_VERSION:-latest}
+    build:
+      context: ../ledger
+    cpus: 1.0
+    mem_limit: 512m
+    restart: unless-stopped
+    labels: *labels
+    environment:
+      LEDGER_DB_URL: jdbc:postgresql://postgres:5432/ledger
+      LEDGER_DB_USER: ledger
+      LEDGER_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 60s
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [internal]
+
+volumes:
+  pg_data:
+
+networks:
+  internal:

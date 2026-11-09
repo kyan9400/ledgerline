@@ -1,0 +1,8 @@
+deploy/.env
+build/
+.gradle/
+.kotlin/
+*.class
+.idea/
+out/
+load/summary.json

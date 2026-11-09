@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: ledger
+  datasource:
+    url: ${LEDGER_DB_URL:jdbc:postgresql://localhost:5432/ledger}
+    username: ${LEDGER_DB_USER:ledger}
+    password: ${LEDGER_DB_PASSWORD:ledger}
+    hikari:
+      maximum-pool-size: ${LEDGER_DB_POOL:16}
+      connection-timeout: 2000
+  threads:
+    virtual:
+      enabled: true
+  flyway:
+    enabled: true
+
+server:
+  port: 8080
+  shutdown: graceful
+  server-header: ""
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus, info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+ledger:
+  # Load shedding (Admission.kt): requests in flight at most, and how long the next may wait for a place.
+  max-in-flight: ${LEDGER_MAX_IN_FLIGHT:32}
+  admission-wait-ms: 200
