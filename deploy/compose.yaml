@@ -2,12 +2,19 @@
 #
 #   cp deploy/.env.example deploy/.env    # then set the passwords
 #   docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
+#   docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm checker   # rebuild the books from Kafka
 #
 # Nothing is published on the host's ports; reach the services through the Compose network.
 name: ledgerline
 
 x-labels: &labels
   com.centurylinklabs.watchtower.enable: "false"
+
+x-hardened: &hardened
+  read_only: true
+  tmpfs: ["/tmp"]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
 
 services:
   postgres:
@@ -20,9 +27,13 @@ services:
       POSTGRES_DB: ledger
       POSTGRES_USER: ledger
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
-    command: ["-c", "max_connections=100", "-c", "shared_buffers=192MB"]
+      PAYMENTS_DB_PASSWORD: ${PAYMENTS_DB_PASSWORD:?set PAYMENTS_DB_PASSWORD in deploy/.env}
+    command: ["-c", "max_connections=100", "-c", "shared_buffers=192MB",
+              "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
     volumes:
       - pg_data:/var/lib/postgresql
+      # On first start: the payments service's database and role (it can't touch the ledger's).
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-payments.sh:ro
     shm_size: 256mb
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ledger -d ledger"]
@@ -31,10 +42,48 @@ services:
       retries: 10
     networks: [internal]
 
+  # One broker in KRaft mode (no ZooKeeper). Kafka carries the services' events to consumers; the
+  # source of truth stays in PostgreSQL.
+  kafka:
+    image: apache/kafka:4.4.0
+    cpus: 1.0
+    mem_limit: 1g
+    restart: unless-stopped
+    labels: *labels
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # On the volume (the image's default is under /tmp, inside the container).
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # Kept by size, not age: at most 150 MB a partition (the disk here is small).
+      KAFKA_LOG_RETENTION_MS: -1
+      KAFKA_LOG_RETENTION_BYTES: 157286400
+      KAFKA_HEAP_OPTS: -Xmx512m -Xms512m
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    networks: [internal]
+
   ledger:
     image: ledgerline-ledger:${LEDGERLINE_VERSION:-latest}
     build:
-      context: ../ledger
+      context: ..
+      target: ledger
     cpus: 1.0
     mem_limit: 512m
     restart: unless-stopped
@@ -43,6 +92,7 @@ services:
       LEDGER_DB_URL: jdbc:postgresql://postgres:5432/ledger
       LEDGER_DB_USER: ledger
       LEDGER_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -51,14 +101,86 @@ services:
       timeout: 5s
       retries: 4
       start_period: 60s
-    read_only: true
-    tmpfs: ["/tmp"]
-    security_opt: ["no-new-privileges:true"]
-    cap_drop: [ALL]
+    <<: *hardened
+    networks: [internal]
+
+  payments:
+    image: ledgerline-payments:${LEDGERLINE_VERSION:-latest}
+    build:
+      context: ..
+      target: payments
+    cpus: 1.0
+    mem_limit: 512m
+    restart: unless-stopped
+    labels: *labels
+    environment:
+      PAYMENTS_DB_URL: jdbc:postgresql://postgres:5432/payments
+      PAYMENTS_DB_USER: payments
+      PAYMENTS_DB_PASSWORD: ${PAYMENTS_DB_PASSWORD}
+      LEDGER_URL: http://ledger:8080
+      OTHERBANK_URL: http://otherbank:8090
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      postgres: { condition: service_healthy }
+      ledger: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 60s
+    <<: *hardened
+    networks: [internal]
+
+  # The simulated other bank payouts go to. By default it misbehaves a little: 5% of answers fail,
+  # 5% come after the caller has given up, 2% of payouts are returned after acceptance.
+  otherbank:
+    image: ledgerline-otherbank:${LEDGERLINE_VERSION:-latest}
+    build:
+      context: ..
+      target: otherbank
+    cpus: 0.5
+    mem_limit: 192m
+    restart: unless-stopped
+    labels: *labels
+    environment:
+      FAIL_RATE: ${OTHERBANK_FAIL_RATE:-0.05}
+      SLOW_RATE: ${OTHERBANK_SLOW_RATE:-0.05}
+      RETURN_RATE: ${OTHERBANK_RETURN_RATE:-0.02}
+      JOURNAL: /data/journal.jsonl
+    volumes:
+      - otherbank_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+    <<: *hardened
+    networks: [internal]
+
+  # A tool, not a service: docker compose run --rm checker
+  checker:
+    image: ledgerline-checker:${LEDGERLINE_VERSION:-latest}
+    build:
+      context: ..
+      target: checker
+    profiles: [tools]
+    labels: *labels
+    environment:
+      KAFKA: kafka:9092
+      LEDGER_DB: jdbc:postgresql://postgres:5432/ledger
+      LEDGER_DB_USER: ledger
+      LEDGER_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      PAYMENTS_DB: jdbc:postgresql://postgres:5432/payments
+      PAYMENTS_DB_USER: payments
+      PAYMENTS_DB_PASSWORD: ${PAYMENTS_DB_PASSWORD}
+    <<: *hardened
     networks: [internal]
 
 volumes:
   pg_data:
+  kafka_data:
+  otherbank_data:
 
 networks:
   internal:

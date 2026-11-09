@@ -1,0 +1,9 @@
+**/build
+**/.gradle
+**/.kotlin
+.git
+.github
+deploy
+docs
+eval
+load

@@ -1,0 +1,63 @@
+{
+ "steps": [
+  {
+   "scenario": "cards_25",
+   "target_per_s": 25,
+   "authorised_per_s": 25.022222222222222,
+   "captured_per_s": 23.733333333333334,
+   "shed": 0,
+   "pending_202": 0,
+   "authorise_p50_ms": 11.990585500000002,
+   "authorise_p95_ms": 28.22722225,
+   "authorise_p99_ms": 45.63245325,
+   "capture_p50_ms": 11.3272335,
+   "capture_p95_ms": 23.394794499999996,
+   "failed": 0
+  },
+  {
+   "scenario": "cards_50",
+   "target_per_s": 50,
+   "authorised_per_s": 50.022222222222226,
+   "captured_per_s": 47.55555555555556,
+   "shed": 0,
+   "pending_202": 0,
+   "authorise_p50_ms": 11.180227,
+   "authorise_p95_ms": 103.63430600000001,
+   "authorise_p99_ms": 171.922449,
+   "capture_p50_ms": 11.6372015,
+   "capture_p95_ms": 111.96826444999998,
+   "failed": 0
+  },
+  {
+   "scenario": "cards_75",
+   "target_per_s": 75,
+   "authorised_per_s": 70.53333333333333,
+   "captured_per_s": 65.17777777777778,
+   "shed": 276,
+   "pending_202": 0,
+   "authorise_p50_ms": 348.19775500000003,
+   "authorise_p95_ms": 500.311149,
+   "authorise_p99_ms": 599.91104,
+   "capture_p50_ms": 379.409574,
+   "capture_p95_ms": 531.1906512999999,
+   "failed": 0
+  },
+  {
+   "scenario": "cards_100",
+   "target_per_s": 100,
+   "authorised_per_s": 76.35555555555555,
+   "captured_per_s": 64.77777777777777,
+   "shed": 1408,
+   "pending_202": 0,
+   "authorise_p50_ms": 362.168799,
+   "authorise_p95_ms": 495.768508,
+   "authorise_p99_ms": 595.164155,
+   "capture_p50_ms": 394.5089385,
+   "capture_p95_ms": 525.9798016499999,
+   "failed": 0
+  }
+ ],
+ "payouts_accepted": 858,
+ "declined": 0,
+ "dropped_iterations": 0
+}

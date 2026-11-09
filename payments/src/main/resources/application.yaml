@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: payments
+  datasource:
+    url: ${PAYMENTS_DB_URL:jdbc:postgresql://localhost:5432/payments}
+    username: ${PAYMENTS_DB_USER:payments}
+    password: ${PAYMENTS_DB_PASSWORD:payments}
+    hikari:
+      maximum-pool-size: ${PAYMENTS_DB_POOL:16}
+      connection-timeout: 2000
+  threads:
+    virtual:
+      enabled: true
+  flyway:
+    enabled: true
+    # Not db/migration: the ledger's migrations live there, and the tests put both on one classpath.
+    locations: classpath:db/payments
+
+server:
+  port: 8080
+  shutdown: graceful
+  server-header: ""
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus, info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+payments:
+  ledger:
+    url: ${LEDGER_URL:http://localhost:8080}
+    timeout: 2s
+  # The other bank payouts go to (simulated).
+  otherbank:
+    url: ${OTHERBANK_URL:http://localhost:8090}
+    timeout: 1s
+  # How many holds and clearing accounts per currency (a payment keeps the one it was given).
+  system-account-shards: 16
+  # How long an authorisation holds the money before it is voided.
+  authorisation-ttl: ${AUTHORISATION_TTL:7d}
+  worker:
+    poll-ms: 100
+    parallelism: 32
+
+admission:
+  max-in-flight: ${PAYMENTS_MAX_IN_FLIGHT:32}
+  wait-ms: 200
+
+outbox:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:}
+  topics: payments.events
+  partitions: 6

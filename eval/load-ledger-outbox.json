@@ -1,0 +1,9 @@
+{
+ "note": "load/ledger.js with the outbox on (stage 2): RATES=100,250,400 STEP_S=45 HOT_RATE=150, k6 capped at 1 CPU. From the run's output on 2026-11-09 (its summary file couldn't be written: a permissions slip).",
+ "steps": [
+  {"scenario": "spread_100", "target_rps": 100, "done_rps": 100.02, "shed_share": 0, "p50_ms": 4.07, "p95_ms": 6.01, "p99_ms": 8.66, "failed": 0},
+  {"scenario": "spread_250", "target_rps": 250, "done_rps": 250.02, "shed_share": 0, "p50_ms": 4.11, "p95_ms": 52.87, "p99_ms": 78.15, "failed": 0},
+  {"scenario": "spread_400", "target_rps": 400, "done_rps": 379.42, "shed_share": 0.0502, "p50_ms": 244.70, "p95_ms": 350.84, "p99_ms": 420.00, "failed": 0},
+  {"scenario": "hot", "target_rps": 150, "done_rps": 150.02, "shed_share": 0, "p50_ms": 4.01, "p95_ms": 8.85, "p99_ms": 50.65, "failed": 0}
+ ]
+}

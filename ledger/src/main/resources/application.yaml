@@ -29,7 +29,15 @@ management:
       probes:
         enabled: true
 
-ledger:
-  # Load shedding (Admission.kt): requests in flight at most, and how long the next may wait for a place.
+# Load shedding (dev.ledgerline.platform.Admission): requests in flight at most, and how long the next may
+# wait for a place.
+admission:
   max-in-flight: ${LEDGER_MAX_IN_FLIGHT:32}
-  admission-wait-ms: 200
+  wait-ms: 200
+
+# The outbox relay sends every event to Kafka (off when no bootstrap servers are set).
+outbox:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:}
+  topics: ledger.events
+  partitions: 6

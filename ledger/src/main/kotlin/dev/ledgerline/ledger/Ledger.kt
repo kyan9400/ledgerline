@@ -1,5 +1,6 @@
 package dev.ledgerline.ledger
 
+import dev.ledgerline.platform.Outbox
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Service
@@ -16,14 +17,18 @@ const val MAX_ENTRIES = 100
 const val MAX_DESCRIPTION = 500
 const val MAX_METADATA = 20
 
+/** The Kafka topic every ledger event goes to, through the outbox (keyed by stream). */
+const val LEDGER_TOPIC = "ledger.events"
+
 /**
  * The ledger: double-entry postings over an append-only event log.
  *
  * A posting locks the balances of its accounts in id order (so two postings over the same accounts can't
  * deadlock), checks that each currency sums to zero and that no account that may not go negative would,
  * then appends one event to the transaction's stream and one to each account's stream, and updates the
- * projections, all in one database transaction. The methods ending in `In` run inside the caller's
- * transaction (the idempotency layer opens it); the others open their own.
+ * projections, all in one database transaction. Each event also goes into the outbox, in that same
+ * transaction, on its way to Kafka. The methods ending in `In` run inside the caller's transaction (the
+ * idempotency layer opens it); the others open their own.
  */
 @Service
 class Ledger(
@@ -32,6 +37,7 @@ class Ledger(
     private val tx: TransactionTemplate,
     private val clock: Clock,
     private val meters: MeterRegistry,
+    private val outbox: Outbox,
 ) {
     // --- accounts ------------------------------------------------------------------------------------
 
@@ -239,8 +245,10 @@ class Ledger(
     private fun metadata(s: String): Map<String, String> = json.readValue(s, Map::class.java) as Map<String, String>
 
     private fun append(stream: String, version: Int, type: String, data: Map<String, Any?>, at: Instant) {
+        val dataJson = json.writeValueAsString(data)
         db.sql("INSERT INTO events (stream, version, type, data, recorded_at) VALUES (:s, :v, :t, :d::jsonb, :at)")
-            .param("s", stream).param("v", version).param("t", type).param("d", json.writeValueAsString(data))
+            .param("s", stream).param("v", version).param("t", type).param("d", dataJson)
             .param("at", Timestamp.from(at)).update()
+        outbox.addJson(LEDGER_TOPIC, stream, version, type, dataJson, at)
     }
 }

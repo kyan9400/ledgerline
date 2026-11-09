@@ -1,11 +1,26 @@
 # Ledgerline
 
 **A payments platform built like a bank's: money is never created, lost or moved twice.** At its core
-is a double-entry ledger over an append-only event log, in Kotlin and Spring Boot on PostgreSQL. Each
-property it promises is checked by tests that try hard to break it.
+is a double-entry ledger over an append-only event log. Card payments and payouts to other banks run on
+it as state machines and sagas, and every change reaches Kafka through a transactional outbox. It is
+written in Kotlin and Spring Boot on PostgreSQL and Kafka. Each property it promises is checked by tests
+that try hard to break it.
 
-> Work in progress: stage 1 of 8, the ledger core, is done (see [the plan](#roadmap)). All accounts and
-> money in it are made up.
+> Work in progress: stages 1 and 2 of 8 are done (see [the plan](#roadmap)). All accounts and money in
+> it are made up.
+
+```
+               ┌────────────────┐  HTTP + idempotency keys  ┌────────────────┐
+  clients ────▶│    payments    │──────────────────────────▶│     ledger     │◀──── clients
+               │ state machines │                           │  double entry  │
+               │ sagas, worker  │──▶ otherbank (simulated)  │   event log    │
+               └───────┬────────┘                           └───────┬────────┘
+                       │ outbox                                     │ outbox
+                       ▼                                            ▼
+               ┌──────────────────────────── Kafka ─────────────────────────────┐
+               │  payments.events (by payment)        ledger.events (by account) │
+               └─────────────────────────────────────────────────────────────────┘
+```
 
 ## The ledger
 
@@ -38,7 +53,7 @@ property it promises is checked by tests that try hard to break it.
   with `Retry-After`, which is safe to retry with the same key.
 
 ```
-POST /v1/accounts                     open an account (customer, merchant, or system: may go negative)
+POST /v1/accounts                     open an account (customer, merchant, or system)
 GET  /v1/accounts/{id}                balance and version;   GET /v1/accounts?code=...
 GET  /v1/accounts/{id}/entries        statement, newest first, paged
 POST /v1/transfers                    from, to, amount
@@ -50,11 +65,89 @@ GET  /v1/transactions/{id}
 Refusals are [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details with a stable `code`:
 `insufficient_funds`, `already_reversed`, `idempotency_key_reused`, `busy` and so on.
 
+## Payments
+
+The payments service keeps no money. It keeps what each payment, refund and payout is doing, as a state
+machine in its own database, and moves the money with ledger postings. It has three accounts of its own
+in the ledger per currency: **holds**, **clearing** and, per bank, **settlement**.
+
+```
+card payment   authorising ─▶ authorised ─▶ capturing ─▶ captured ─▶ refunds: refunding ─▶ refunded | failed
+                     │              └─────▶ voiding ───▶ voided  (on request, or when the hold expires)
+                     └─▶ declined
+payout         reserving ─▶ submitting ─▶ submitted ─▶ settling ─▶ settled
+                   │             │             └─────▶ returning ─▶ returned
+                   └─▶ refused   └─────────────────────▶ returning
+```
+
+- **Authorise** moves the amount from the customer to holds; **capture** posts holds → merchant, and the
+  uncaptured rest back to the customer, in one posting; **void** and **expiry** post holds → customer;
+  a **refund** posts merchant → customer, never more in total than was captured. If the merchant hasn't
+  the money, the refund fails and the amount stays refundable.
+- **Each step is one ledger posting with a key fixed by the payment and the step**
+  (`payments:payment:<id>:capture`). The API records the intent (the -ing state) and then takes the step
+  at once. If it can't finish (the ledger is slow, the service dies), a worker takes it later. A retry,
+  from anywhere, lands on the first try's result, because the ledger's idempotency replays it.
+- **Two drivers can't both win:** every change of state is conditional on the version it was decided
+  from, and the worker leases each row before taking a step, so several instances share the work.
+- **Payouts are a saga** against another bank: reserve the money in clearing, send the payout, wait for
+  the bank to settle it, then post clearing → settlement; or, if the bank refuses or returns it, post
+  clearing → customer.
+- **A timeout at the bank is not a refusal.** It says nothing about whether the bank got the payout, so
+  the money stays reserved and the payout is sent again, by the same id (the bank's API is idempotent by
+  it), until the bank answers. Money is never given back on a guess.
+- **Reconciliation** (`GET /internal/reconcile`) checks the service's records against the ledger's
+  balances and the bank's records:
+  - holds holds exactly the authorised payments;
+  - clearing holds exactly the payouts on their way;
+  - settlement is exactly what has settled;
+  - the bank has each payout it accepted once, with the same amount and outcome;
+  - each payment's refunds add up.
+
+```
+POST /v1/payments                     authorise: customer, merchant, amount
+POST /v1/payments/{id}/capture        all, or { amount } of it
+POST /v1/payments/{id}/void
+POST /v1/payments/{id}/refunds        { amount }
+POST /v1/payouts                      account, amount, bank, beneficiary
+GET  /v1/payments/{id}  /v1/payments/{id}/refunds  /v1/refunds/{id}  /v1/payouts/{id}
+```
+
+A write answers with the resource: `201` or `200` when its step is done, `202` while it's still in
+progress (then `GET` it).
+
+**The other bank** ([`otherbank`](otherbank/src/main/kotlin/dev/ledgerline/otherbank/OtherBank.kt)) is a
+simulation that misbehaves on purpose. It fails a share of its answers. It answers a share only after the
+caller has stopped waiting, having done the work. It accepts some payouts and returns them later. It
+refuses closed accounts. It keeps a journal, so a restart forgets nothing.
+
+## Events: the outbox into Kafka
+
+A service writes each event to an `outbox` table **in the same database transaction as the change**, so
+an event is published if and only if its change commits. A relay sends the outbox to Kafka in order
+(an idempotent producer, `acks=all`) and deletes what Kafka has acknowledged.
+
+- **Each stream stays in order.** Two changes to one account or payment lock the same row, so the
+  second's outbox row is written only after the first commits. The relay reads in that order, and the
+  stream is the Kafka key, so it stays in order in its partition.
+- **At least once, exactly once in effect.** If the relay dies between sending and deleting, it sends
+  the batch again. Every event has an id (`stream:version`), and a consumer skips a version it has
+  already applied.
+- **Kafka can be down; the services can't tell.** Writes go on, the outbox grows (`outbox.lag.seconds`),
+  and it drains when Kafka is back.
+- **The whole history:** the ledger's events from before the outbox existed went through it too, so a
+  consumer can rebuild every account from the start of the topic.
+- **The checker** ([`checker`](checker/src/main/kotlin/dev/ledgerline/checker/Checker.kt)) does exactly
+  that. It rebuilds every account's balance and version from `ledger.events`, and every payment's,
+  refund's and payout's state from `payments.events`, from Kafka alone. Then it compares them with the
+  services' databases.
+
 ## Tested to break
 
-The tests run against a real PostgreSQL:
+The tests run against a real PostgreSQL and Kafka. The payments tests run a real ledger and the
+simulated bank in the same JVM.
 
-- **A model, and random operations:** Kotest generates 150 random sequences of up to 40 operations:
+- **The ledger against a model:** Kotest generates 150 random sequences of up to 40 operations:
   transfers, multi-entry postings, reversals of earlier transactions, and retries of earlier requests
   with their keys. Each runs against the ledger and against an in-memory model a few lines long.
   - After every operation, the outcome (done, or refused and why) and every balance must agree with the
@@ -67,18 +160,40 @@ The tests run against a real PostgreSQL:
   - 3,000 random transfers run in every direction between ten accounts: the total is unchanged and
     none is overdrawn;
   - 30 requests with one key at once give one transaction and one identical answer.
-- **The tests catch what they claim to:** with the row lock removed on purpose, both race tests fail.
-  The event log's version constraint also refuses the conflicting writes, so even then the books
-  aren't corrupted.
-- **The API:** transfers, refusals, idempotent replays, reversals, statements and paging; an append-only
-  event log; a passing audit.
+- **The outbox, end to end:** 2,000 concurrent transfers, then every account rebuilt from Kafka. Versions
+  arrive in order, with no gaps, and every balance equals the ledger's.
+- **Lost answers:** the payments service talks to a ledger whose answers get lost. A fifth of the calls
+  fail before reaching it. Another fifth reach it and take effect, and then the answer is lost: the
+  money moved, and the caller doesn't know. 240 random payments, captures, voids, refunds and payouts
+  run against it at once (in the last run, 215 answers were lost after the ledger acted). When it all
+  settles:
+  - every customer's and merchant's balance is exactly what the final states imply;
+  - the ledger's audit passes;
+  - the reconciliation holds.
+- **A bank that misbehaves:** 150 payouts at once against a bank that fails 30% of its answers, answers
+  20% too late, and returns 20% after accepting them. Every payout ends exactly once, settled or
+  returned (in the last run: 121 settled, 14 returned by the bank after accepting them, 15 rejected for
+  closed accounts). The bank's records match
+  ours, and only settled payouts left the customers' accounts.
+- **The tests catch what they claim to.** With deliberate bugs put in:
+  - with the row lock removed, both ledger race tests fail;
+  - with a new idempotency key on each try, the lost answers make captures run twice. The ledger
+    refuses the second (holds can't go negative), and the lost-answers test fails;
+  - with money given back when the bank's answer is unknown, the reconciliation finds 22 payouts the
+    bank paid that were also refunded.
+- **The API:** authorisations, partial captures, voids, expiry, refunds, refusals and idempotent
+  replays; transfers, reversals, statements and paging; an append-only event log; a passing audit.
 
 ## Measured
 
-A k6 load test ([`load/ledger.js`](load/ledger.js), results in
-[`eval/load-ledger.json`](eval/load-ledger.json)) runs transfers between 1,000 accounts at rising rates,
-then all into 5 merchant accounts (every transfer locks a merchant's row: the worst case for
-contention). The ledger and PostgreSQL each run on 1 CPU, the ledger in 512 MB.
+k6 load tests on a 4-core host shared with other work. The ledger, the payments service, PostgreSQL and
+Kafka each run on 1 CPU, and k6 itself on 1 more.
+
+### The ledger
+
+[`load/ledger.js`](load/ledger.js) runs transfers between 1,000 accounts at rising rates, then all into
+5 merchant accounts (every transfer locks a merchant's row: the worst case for contention). These are
+stage 1's results, before the outbox ([`eval/load-ledger.json`](eval/load-ledger.json)):
 
 | Transfers/s asked | Done/s | Shed (fast 503) | p50 | p95 | p99 | Failed |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -88,9 +203,12 @@ contention). The ledger and PostgreSQL each run on 1 CPU, the ledger in 512 MB.
 | 1,000 | 429 | 57% | 205 ms | 326 ms | 401 ms | 0% |
 | 250, all into 5 merchants | 250 | 0.02% | 3 ms | 10 ms | 71 ms | 0% |
 
-The ledger sustains about 430–440 transfers a second, with both CPUs at their caps. Beyond that it
-refuses the excess quickly and keeps serving what it can. Afterwards the audit passed over all 152,946
-transactions and 460,850 events.
+- **Capacity:** about 430–440 transfers a second, with both CPUs at their caps. Beyond that it refuses
+  the excess quickly and keeps serving what it can.
+- **Audit:** afterwards it passed over all 152,946 transactions and 460,850 events.
+- **The outbox's cost:** every event is now also written to the outbox and sent to Kafka. The ledger
+  manages about **380 transfers a second** (asked for 400, 5% shed), with p95 53 ms at 250 a second
+  ([`eval/load-ledger-outbox.json`](eval/load-ledger-outbox.json)).
 
 The first run of this test found the reason for the shedding. With virtual threads every request gets a
 thread at once, so an overload doesn't queue in the web server: it piles up inside the service. At
@@ -98,31 +216,90 @@ thread at once, so an overload doesn't queue in the web server: it piles up insi
 JVM died. The books were intact even then (the audit passed afterwards), but a ledger mustn't fall over
 under load.
 
+### Payments
+
+[`load/payments.js`](load/payments.js) sends card payments at rising rates, 45 s each, with 5 payouts a
+second to the misbehaving bank alongside. A card payment is an authorisation, then (mostly) a capture:
+two requests to the payments service, two ledger postings, writes to two databases and two outboxes
+([`eval/load-payments.json`](eval/load-payments.json)).
+
+| Card payments/s asked | Authorised/s | Captured/s | Shed | Authorise p50 / p95 / p99 | Capture p50 / p95 | Failed |
+| --- | --- | --- | --- | --- | --- | --- |
+| 25 | 25 | 24 | 0 | 12 / 28 / 46 ms | 11 / 23 ms | 0% |
+| 50 | 50 | 48 | 0 | 11 / 104 / 172 ms | 12 / 112 ms | 0% |
+| 75 | 71 | 65 | 276 | 348 / 500 / 600 ms | 379 / 531 ms | 0% |
+| 100 | 76 | 65 | 1,408 | 362 / 496 / 595 ms | 395 / 526 ms | 0% |
+
+- **Capacity:** about 70–75 card payments a second, plus the payouts.
+- **The limit is PostgreSQL:** one CPU serves both services' databases, and it was throttled for 152 s
+  of the run.
+- **Afterwards:** the reconciliation held over 67,163 payments and 4,106 payouts, the ledger's audit
+  passed, and the checker rebuilt every account from Kafka.
+
+Measuring found five problems, each fixed:
+
+- **One holds account per currency was the hottest row in the system.** Every authorisation and capture
+  posts to it, and a posting locks its accounts' rows, so every card payment waited for every other.
+  The lock query averaged 23 ms per call. A backend that was CPU-throttled while holding the lock made
+  everyone behind it wait. Now there are 16 holds and 16 clearing accounts per currency, and each
+  payment or payout keeps the one it was given.
+- **The outbox table had bloated.** After the backfill of 690,000 events it was 19 MB with 89 live
+  rows, and the relay's reads and deletes scanned it 20 times a second. It was shrunk once, and
+  autovacuum now cleans it after every thousand deletions.
+- **Each authorisation asked the ledger about the two accounts:** their currency and kind, which never
+  change. The answers are now kept.
+- **Cold JVMs:** a JVM on one CPU spends minutes compiling before it is fast, so it is measured only
+  after a warm-up.
+- **The simulated bank couldn't write its journal** (its volume was owned by root). It accepted 2,027
+  payouts and never settled them.
+  - The sagas did what they should: they kept the money reserved and kept asking.
+  - Once the bank was fixed, it no longer knew those payouts. The sagas sent them again by the same ids.
+  - All 2,027 settled or were returned, and the reconciliation held.
+
+And one lesson, the hard way. Kafka was first set up keeping its data inside its container, and
+recreating the container lost the topics.
+
+- **The ledger recovered completely.** It sent its whole history again from its event log, and the
+  checker rebuilt all 1,059,836 events and 8,748 accounts from Kafka.
+- **The payments service couldn't.** It keeps the current state, not an event log, so its earlier
+  events are gone: Kafka is not a system of record.
+- **Next:** stage 3 gives the payments service an event log of its own.
+
 ## Running it
 
 ```bash
-cp deploy/.env.example deploy/.env      # set POSTGRES_PASSWORD (openssl rand -hex 24)
+cp deploy/.env.example deploy/.env      # set the passwords (openssl rand -hex 24)
 docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
+docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm checker   # rebuild the books from Kafka
 ```
 
-The tests, with a throwaway PostgreSQL in Docker:
+The tests, with a throwaway PostgreSQL and Kafka in Docker:
 
 ```bash
-ledger/scripts/test-in-docker.sh
+scripts/test-in-docker.sh
 ```
 
-Or with your own PostgreSQL: `LEDGER_TEST_DB_URL=jdbc:postgresql://... ledger/gradlew -p ledger build`.
+Or with your own: `LEDGERLINE_TEST_DB=jdbc:postgresql://host:5432 LEDGERLINE_TEST_KAFKA=host:9092 ./gradlew build`
+(with the databases `ledger_test` and `payments_test`).
 
-The stack is Kotlin 2.3, Spring Boot 4.1 (Spring MVC on virtual threads, JdbcClient, Flyway), Java 25
-and PostgreSQL 18.
+| Module | |
+| --- | --- |
+| [`ledger`](ledger) | the ledger service |
+| [`payments`](payments) | card payments, refunds, payouts; the worker; reconciliation |
+| [`platform`](platform) | shared by the services: the outbox and its relay, load shedding |
+| [`otherbank`](otherbank) | the simulated other bank |
+| [`checker`](checker) | rebuilds the books from Kafka and compares |
+
+The stack is Kotlin 2.3, Spring Boot 4.1 (Spring MVC on virtual threads, JdbcClient, Flyway), Java 25,
+PostgreSQL 18 and Kafka 4.4 (KRaft, one broker).
 
 ## Roadmap
 
 | Stage | |
 | --- | --- |
 | 1. Ledger core | done |
-| 2. Payments | Card payments (authorise, capture, refund) and transfers to another bank as sagas; an outbox into Kafka |
-| 3. Chaos | Services killed and networks cut mid-payment, with a checker proving nothing is lost or duplicated |
+| 2. Payments | done: card payments, refunds and payouts as sagas; an outbox into Kafka |
+| 3. Chaos | Services, Kafka and the database killed and networks cut mid-payment, with a checker proving nothing is lost or duplicated; an event log for the payments service, so Kafka can be rebuilt from it |
 | 4. Fraud | A simulator with known fraud, real-time features from Kafka, a model scored against the truth |
 | 5. Analytics | ClickHouse fed from Kafka; a Vue 3 dashboard |
 | 6. Merchants | A gRPC API, signed webhooks, an SDK |

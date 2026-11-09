@@ -1,4 +1,4 @@
-package dev.ledgerline.ledger
+package dev.ledgerline.platform
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import jakarta.servlet.FilterChain
@@ -33,7 +33,7 @@ class AdmissionTest {
         assertTrue(refused.contentAsString.contains("\"code\":\"busy\""))
         assertTrue((System.nanoTime() - started) / 1_000_000 < 1_000, "refused after a short wait, not queued")
         assertEquals(200, call("/actuator/health").status) // health and internal checks are never shed
-        assertEquals(1.0, meters.counter("ledger.requests.shed").count())
+        assertEquals(1.0, meters.counter("admission.shed").count())
 
         release.countDown()
         busy.join()

@@ -6,3 +6,4 @@ build/
 .idea/
 out/
 load/summary.json
+load/summary-*.json
