@@ -23,6 +23,11 @@ data class Payment(
     val lastError: String?,
     /** Which of the holds accounts this payment's money waits in (null: the original one). */
     val holdsAccount: UUID?,
+    /** The fraud scorer's verdict (FraudCheck): null when it wasn't asked. */
+    val fraudScore: Double?,
+    val fraudDecision: String?,
+    val fraudModel: String?,
+    val fraudReasons: String?,
 )
 
 data class Refund(

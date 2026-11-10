@@ -1,0 +1,8 @@
+0s load starts: kill-fraud, 120s, 15 flows/s, seed 20261109
+25s kill -9 fraud
+40s start fraud
+75s kill -9 fraud
+90s start fraud
+121s load done
+123s verifying
+131s verified:   "ok" : true,

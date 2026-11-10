@@ -161,6 +161,13 @@ fun verify(env: Map<String, String>, logFile: String): Pair<Map<String, Any>, Bo
         "refunds" to rs.groupingBy { it.state }.eachCount().toSortedMap(),
         "payouts" to pos.groupingBy { it.state }.eachCount().toSortedMap(),
     )
+    // What the fraud scorer said about the run's payments (none: it was off; unscored: it didn't answer).
+    report["fraud_decisions"] = connect(env.getValue("PAYMENTS_DB"), env.getValue("PAYMENTS_DB_USER"), env.getValue("PAYMENTS_DB_PASSWORD")).use { db ->
+        val list = customers.joinToString(",") { "'$it'" }
+        rows(db, "SELECT coalesce(fraud_decision, 'none'), count(*) FROM payments WHERE customer::text IN ($list) GROUP BY 1") {
+            it.getString(1) to it.getLong(2)
+        }.toMap().toSortedMap()
+    }
 
     // Kafka.
     val (kafka, kafkaOk) = check(env)

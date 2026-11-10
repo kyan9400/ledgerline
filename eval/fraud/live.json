@@ -1,0 +1,56 @@
+{
+ "attempts": 6017,
+ "fraud_attempts": 494,
+ "unscored": 0,
+ "fraud_blocked": 0.919,
+ "fraud_money_blocked": 0.8637,
+ "genuine_declined_as_fraud": 0.0158,
+ "genuine_money_declined_as_fraud": 0.0867,
+ "genuine_while_card_under_attack": {
+  "attempts": 459,
+  "declined_as_fraud": 0.0283
+ },
+ "genuine_otherwise": {
+  "attempts": 5064,
+  "declined_as_fraud": 0.0146,
+  "money_declined": 0.0903
+ },
+ "precision": 0.8392,
+ "by_pattern": {
+  "card_testing": {
+   "attempts": 362,
+   "declined_as_fraud": 1.0
+  },
+  "new_merchant": {
+   "attempts": 844,
+   "declined_as_fraud": 0.0118
+  },
+  "single_large": {
+   "attempts": 6,
+   "declined_as_fraud": 0.6667
+  },
+  "splurge": {
+   "attempts": 166,
+   "declined_as_fraud": 0.3313
+  },
+  "takeover": {
+   "attempts": 126,
+   "declined_as_fraud": 0.6984
+  },
+  "usual": {
+   "attempts": 4513,
+   "declined_as_fraud": 0.0049
+  }
+ },
+ "episodes": {
+  "count": 65,
+  "stopped_at_the_first_attempt": 41,
+  "attempts_through_before_the_first_block_median": 0,
+  "money_lost_share": 0.1363
+ },
+ "authorise_ms": {
+  "p50": 16.0,
+  "p95": 26.7,
+  "p99": 41.5
+ }
+}

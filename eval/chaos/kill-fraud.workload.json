@@ -1,0 +1,26 @@
+{
+  "run" : "chaos-mwa5bnc0",
+  "flows" : 1800,
+  "requests" : 3675,
+  "by_kind_and_status" : {
+    "authorise 201" : 1436,
+    "capture 200" : 1074,
+    "payout 202" : 364,
+    "refund 201" : 597,
+    "void 200" : 204
+  },
+  "sent_twice_at_once" : 386,
+  "attempts" : 4310,
+  "requests_retried" : 463,
+  "unresolved" : 0,
+  "errors_seen" : {
+    "http_503" : 249
+  },
+  "ms_to_answer" : {
+    "p50" : 12,
+    "p95" : 488,
+    "p99" : 3858,
+    "max" : 5273
+  },
+  "log" : "/out/kill-fraud.log.json"
+}

@@ -120,6 +120,8 @@ services:
       LEDGER_URL: http://ledger:8080
       OTHERBANK_URL: http://otherbank:8090
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      FRAUD_URL: http://fraud:8000
+      FRAUD_MODE: ${FRAUD_MODE:-shadow}
     depends_on:
       postgres: { condition: service_healthy }
       ledger: { condition: service_healthy }
@@ -129,6 +131,31 @@ services:
       timeout: 5s
       retries: 4
       start_period: 60s
+    <<: *hardened
+    networks: [internal]
+
+  # The fraud scorer: features from payments.events (rebuilt from the topic on start), a LightGBM model
+  # from the fraud_model volume (python -m fraud.train writes it; without one, rules decide). The payments
+  # service asks it before a card payment's money moves, and goes on without it if it doesn't answer.
+  fraud:
+    image: ledgerline-fraud:${LEDGERLINE_VERSION:-latest}
+    build:
+      context: ../fraud
+    cpus: 1.0
+    mem_limit: 512m
+    restart: unless-stopped
+    labels: *labels
+    environment:
+      KAFKA: kafka:9092
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - fraud_model:/model:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 120s
     <<: *hardened
     networks: [internal]
 
@@ -181,6 +208,7 @@ volumes:
   pg_data:
   kafka_data:
   otherbank_data:
+  fraud_model:
 
 networks:
   internal:

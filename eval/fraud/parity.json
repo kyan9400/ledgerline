@@ -1,0 +1,8 @@
+{
+ "payments": 6017,
+ "same_score_within_0.001": 0.9998,
+ "same_decision": 1.0,
+ "max_difference": 0.0098,
+ "genuine_declined_online": 0.0158,
+ "genuine_declined_offline": 0.0158
+}

@@ -1,0 +1,29 @@
+{
+ "name": "lightgbm-v1",
+ "features": [
+  "n_1m",
+  "n_10m",
+  "n_1h",
+  "sum_10m_log",
+  "sum_1h_log",
+  "merchants_10m",
+  "declines_10m",
+  "small_10m",
+  "history_log",
+  "amount_log",
+  "amount_z",
+  "amount_vs_max",
+  "new_merchant",
+  "merchant_share",
+  "since_last_log",
+  "merchant_n_10m"
+ ],
+ "threshold": 0.15286957116850994,
+ "trained_on": 6045,
+ "rules": {
+  "n_1m": 6,
+  "small_10m": 1000000000.0,
+  "merchants_10m": 20,
+  "amount_z": 1000000000.0
+ }
+}

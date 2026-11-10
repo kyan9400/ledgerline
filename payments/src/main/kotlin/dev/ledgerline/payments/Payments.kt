@@ -34,6 +34,7 @@ class Payments(
     private val accounts: SystemAccounts,
     private val clock: Clock,
     private val authorisationTtl: Duration,
+    private val fraud: FraudCheck,
     outbox: Outbox,
     json: JsonMapper,
     meters: MeterRegistry,
@@ -114,8 +115,24 @@ class Payments(
 
     /** Drives a payment's step, if it has one. Returns the payment as it is then. */
     fun drivePayment(id: UUID): Payment {
-        val p = payment(id)
+        var p = payment(id)
         if (p.state !in PAYMENT_STEPS) return p
+        if (p.state == "authorising" && fraud.on) {
+            if (p.fraudDecision == null) {
+                // Asked once: the verdict is kept, so a retried step goes by the same one.
+                val v = fraud.verdict(p)
+                db.sql(
+                    """UPDATE payments SET fraud_score = :s, fraud_decision = :d, fraud_model = :m, fraud_reasons = :r
+                       WHERE id = :id AND fraud_decision IS NULL""",
+                ).param("s", v.score).param("d", v.decision).param("m", v.model).param("r", v.reasons).param("id", id).update()
+                p = payment(id)
+            }
+            val v = Verdict(p.fraudScore, p.fraudDecision!!, p.fraudModel, p.fraudReasons)
+            if (fraud.declines(v)) {
+                tx.executeWithoutResult { payments.change(id, p.version, "declined", mapOf("decline_reason" to "fraud_suspected")) }
+                return payment(id)
+            }
+        }
         val meta = mapOf("payment" to id.toString())
         val holds = p.holdsAccount ?: accounts.legacyHolds(p.currency)
         val step = when (p.state) {
@@ -197,6 +214,7 @@ class Payments(
         rs.getLong("refunded"), rs.getString("decline_reason"), rs.getString("void_reason"), rs.getString("description"),
         rs.getTimestamp("expires_at")?.toInstant(), rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant(),
         rs.getInt("version"), rs.getString("last_error"), rs.getObject("holds_account", UUID::class.java),
+        rs.getObject("fraud_score") as Double?, rs.getString("fraud_decision"), rs.getString("fraud_model"), rs.getString("fraud_reasons"),
     )
 
     private fun refundOf(rs: ResultSet) = Refund(

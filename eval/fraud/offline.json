@@ -1,0 +1,146 @@
+{
+ "attempts": 10076,
+ "fraud_share": 0.066,
+ "split": {
+  "train": 6045,
+  "validation": 1512,
+  "test": 2519
+ },
+ "test": {
+  "attempts": 2519,
+  "fraud": 187
+ },
+ "model": {
+  "rounds": 84,
+  "threshold": 0.1529,
+  "pr_auc": 0.9605,
+  "roc_auc": 0.9943,
+  "fraud_caught": 0.8824,
+  "fraud_money_caught": 0.8167,
+  "genuine_declined": 0.0069,
+  "genuine_money_declined": 0.0458,
+  "precision": 0.9116,
+  "by_pattern": {
+   "card_testing": {
+    "attempts": 126,
+    "flagged": 1.0
+   },
+   "new_merchant": {
+    "attempts": 355,
+    "flagged": 0.0113
+   },
+   "single_large": {
+    "attempts": 7,
+    "flagged": 0.2857
+   },
+   "splurge": {
+    "attempts": 77,
+    "flagged": 0.1429
+   },
+   "takeover": {
+    "attempts": 54,
+    "flagged": 0.6852
+   },
+   "usual": {
+    "attempts": 1900,
+    "flagged": 0.0005
+   }
+  }
+ },
+ "rules_tuned": {
+  "thresholds": {
+   "n_1m": 6,
+   "small_10m": 1000000000.0,
+   "merchants_10m": 20,
+   "amount_z": 1000000000.0
+  },
+  "fraud_caught": 0.369,
+  "fraud_money_caught": 0.2385,
+  "genuine_declined": 0.0099,
+  "genuine_money_declined": 0.0053,
+  "precision": 0.75,
+  "by_pattern": {
+   "card_testing": {
+    "attempts": 126,
+    "flagged": 0.5317
+   },
+   "new_merchant": {
+    "attempts": 355,
+    "flagged": 0.0113
+   },
+   "single_large": {
+    "attempts": 7,
+    "flagged": 0.0
+   },
+   "splurge": {
+    "attempts": 77,
+    "flagged": 0.0
+   },
+   "takeover": {
+    "attempts": 54,
+    "flagged": 0.037
+   },
+   "usual": {
+    "attempts": 1900,
+    "flagged": 0.01
+   }
+  }
+ },
+ "rules_untuned": {
+  "thresholds": {
+   "n_1m": 4,
+   "small_10m": 4,
+   "merchants_10m": 5,
+   "amount_z": 2.5
+  },
+  "fraud_caught": 0.9412,
+  "fraud_money_caught": 0.944,
+  "genuine_declined": 0.7513,
+  "genuine_money_declined": 0.7472,
+  "precision": 0.0913,
+  "by_pattern": {
+   "card_testing": {
+    "attempts": 126,
+    "flagged": 0.9524
+   },
+   "new_merchant": {
+    "attempts": 355,
+    "flagged": 0.7099
+   },
+   "single_large": {
+    "attempts": 7,
+    "flagged": 1.0
+   },
+   "splurge": {
+    "attempts": 77,
+    "flagged": 0.9221
+   },
+   "takeover": {
+    "attempts": 54,
+    "flagged": 0.9074
+   },
+   "usual": {
+    "attempts": 1900,
+    "flagged": 0.7521
+   }
+  }
+ },
+ "importance_by_gain": {
+  "amount_log": 12469.4,
+  "amount_z": 2735.7,
+  "since_last_log": 2305.1,
+  "small_10m": 1436.6,
+  "amount_vs_max": 1073.5,
+  "n_1m": 1008.0,
+  "merchant_share": 566.4,
+  "merchants_10m": 440.9,
+  "merchant_n_10m": 363.6,
+  "new_merchant": 275.9,
+  "n_1h": 182.9,
+  "sum_1h_log": 182.8,
+  "sum_10m_log": 158.5,
+  "n_10m": 149.0,
+  "history_log": 19.4,
+  "declines_10m": 0.0
+ }
+}

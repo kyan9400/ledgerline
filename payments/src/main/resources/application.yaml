@@ -41,6 +41,11 @@ payments:
     timeout: 1s
   # How many holds and clearing accounts per currency (a payment keeps the one it was given).
   system-account-shards: 16
+  # The fraud scorer, asked before a card payment's money moves: off, shadow (record only) or enforce.
+  fraud:
+    url: ${FRAUD_URL:}
+    mode: ${FRAUD_MODE:off}
+    timeout: 150ms
   # How long an authorisation holds the money before it is voided.
   authorisation-ttl: ${AUTHORISATION_TTL:7d}
   worker:

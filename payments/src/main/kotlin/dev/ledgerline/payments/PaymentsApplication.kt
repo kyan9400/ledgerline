@@ -35,6 +35,16 @@ class PaymentsApplication {
         json: JsonMapper,
     ) = Banks(mapOf("otherbank" to BankClient(HttpService(url, timeout, json))))
 
+    /** The fraud scorer (payments.fraud.url; none: off). */
+    @Bean
+    fun fraudCheck(
+        @Value("\${payments.fraud.url:}") url: String,
+        @Value("\${payments.fraud.mode:off}") mode: String,
+        @Value("\${payments.fraud.timeout:150ms}") timeout: Duration,
+        json: JsonMapper,
+        meters: MeterRegistry,
+    ) = FraudCheck(url.takeIf { it.isNotBlank() }?.let { HttpService(it, timeout, json) }, if (url.isBlank()) "off" else mode, meters)
+
     @Bean
     fun idempotency(db: JdbcClient, json: JsonMapper, tx: TransactionTemplate) = Idempotency(db, json, tx)
 
@@ -46,10 +56,11 @@ class PaymentsApplication {
         accounts: SystemAccounts,
         clock: Clock,
         @Value("\${payments.authorisation-ttl}") ttl: Duration,
+        fraud: FraudCheck,
         outbox: Outbox,
         json: JsonMapper,
         meters: MeterRegistry,
-    ) = Payments(db, tx, ledger, accounts, clock, ttl, outbox, json, meters)
+    ) = Payments(db, tx, ledger, accounts, clock, ttl, fraud, outbox, json, meters)
 
     @Bean
     fun payouts(

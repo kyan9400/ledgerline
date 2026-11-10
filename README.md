@@ -6,7 +6,7 @@ it as state machines and sagas, and every change reaches Kafka through a transac
 written in Kotlin and Spring Boot on PostgreSQL and Kafka. Each property it promises is checked by tests
 that try hard to break it.
 
-> Work in progress: stages 1 to 3 of 8 are done (see [the plan](#roadmap)). All accounts and money in
+> Work in progress: stages 1 to 4 of 8 are done (see [the plan](#roadmap)). All accounts and money in
 > it are made up.
 
 ```
@@ -147,6 +147,79 @@ Kafka in order (an idempotent producer, `acks=all`) and deletes what Kafka has a
   refund's and payout's state from `payments.events`, from Kafka alone. Then it compares them with the
   services' databases.
 
+## Fraud
+
+Before a card payment's money moves, the payments service asks a fraud scorer
+([`fraud`](fraud/fraud/service.py), Python). The scorer has a LightGBM model and real-time features for
+every customer and merchant, which it keeps from `payments.events`.
+
+- **Features from Kafka:**
+  - the customer's attempts and amounts in the last minute, 10 minutes and hour;
+  - the distinct merchants they used in those 10 minutes, and their tiny test payments;
+  - this amount against their usual and their largest;
+  - whether they have paid this merchant before, and how often;
+  - the time since their last attempt;
+  - the merchant's recent volume.
+
+  On start, the scorer rebuilds them from the start of the topic: 72,000 events in 1.4 s. A request
+  counts at once, by its payment id, so a burst doesn't wait for the topic. Its event, when it comes,
+  is skipped as already seen.
+- **One feature module, online and offline.** Training replays the topic through the same code the
+  scorer runs ([`features.py`](fraud/fraud/features.py)). Replaying a live run gives the same score as
+  live for 99.98% of payments, and the same decision for all of them
+  ([`eval/fraud/parity.json`](eval/fraud/parity.json)).
+- **Asked once, and it fails open.** The verdict is kept on the payment, so a retried step goes by the
+  same one. If the scorer doesn't answer within 150 ms (it is down, or still rebuilding), the payment
+  goes on, marked `unscored`. A fraud check that can stop every card payment is a bigger outage than the
+  fraud it stops.
+- **Three modes:**
+  - `off`;
+  - `shadow`: score and record, never decline, to measure a model before trusting it;
+  - `enforce`: a decline verdict declines the payment as `fraud_suspected`, before any money is held.
+
+### Measured against the truth
+
+A simulator ([`sim.py`](fraud/fraud/sim.py)) drives the real API. It mixes customers with habits and
+stolen cards, and writes down which attempts were fraud; nothing in the payments system sees that.
+
+- **Customers** have favourite merchants, a usual amount and a pace: about one attempt a minute, since
+  time here is fast. Now and then they try somewhere new. 3% of their attempts are a splurge: several
+  times their usual, at a merchant they've never used.
+- **Fraud** comes as episodes on a stolen card:
+  - card testing: a string of payments under 5 roubles, seconds apart, then a large one;
+  - account takeover: several large payments at new merchants;
+  - a single large hit, which alone looks just like a splurge.
+
+The model is trained on 25 minutes of shadow-mode traffic: 10,076 attempts, 6.6% of them fraud. The
+split is by time: the first 60% to learn from, the next 15% to set the threshold (at most 1% of genuine
+attempts declined), and the last 25% to test on. The rules a fraud analyst would write first are the
+baseline, with their thresholds tuned on the same data to the same budget
+([`eval/fraud/offline.json`](eval/fraud/offline.json)).
+
+| On the test part (2,519 attempts) | Fraud caught | Fraud money caught | Genuine declined | Precision |
+| --- | --- | --- | --- | --- |
+| **Model** (LightGBM, 16 features; PR-AUC 0.96) | **88%** | **82%** | 0.7% | 91% |
+| Rules, tuned to the same budget | 37% | 24% | 1.0% | 75% |
+| Rules, as first written | 94% | 94% | 75% | 9% |
+
+Then **live, in enforce mode**: 15 minutes of new customers and cards (another seed), the model
+declining as they pay ([`eval/fraud/live.json`](eval/fraud/live.json)):
+
+- **Fraud stopped:** 91.9% of the 494 fraud attempts were declined, and 86% of the fraud money. Of 65
+  stolen cards, 41 were stopped at their first attempt, and 13.6% of the money at risk got through.
+- **By pattern:** card testing was stopped every time, takeovers 70%, single large hits 4 of 6.
+- **The cost:** 1.6% of genuine attempts were declined, against 0.7% expected offline. A third of
+  genuine splurges were declined: they look like the single large hit.
+  - It isn't skew between serving and training: replaying the live run offline gives the same
+    decisions.
+  - It is the threshold: it was set where 1% of genuine validation attempts would be declined, and that
+    rested on 14 of them. On another population the rate came out higher. A bigger shadow window to set
+    it on is the fix.
+- **The time:** authorisation took 16 ms at the median and 27 ms at p95, against 15 and 25 in shadow
+  mode. The scoring itself took 1–2 ms.
+- **Killing the scorer** is a chaos scenario: payments go on unscored while it is down, then it rebuilds
+  and scores again. Nothing else changes.
+
 ## Tested to break
 
 The tests run against a real PostgreSQL and Kafka. The payments tests run a real ledger and the
@@ -227,13 +300,14 @@ system, while a client keeps paying.
 | `kill-ledger` | the ledger killed (SIGKILL) 3 times, 10 s each | 3,698 (396) | 647 | 435 ms / 2.2 s / 28.9 s | all checks hold |
 | `kill-payments` | the payments service killed 3 times, mid-step | 3,700 (370) | 18,820 | 2.2 s / 87.5 s / 137.0 s | all checks hold |
 | `kill-postgres` | PostgreSQL killed twice: both services lose their database | 3,667 (384) | 2,397 | 13 ms / 10.7 s / 23.9 s | all checks hold |
+| `kill-fraud` | the fraud scorer (enforcing) killed twice, 15 s each | 3,675 (386) | 249 | 12 ms / 488 ms / 5.3 s | all checks hold |
 | `kill-kafka` | Kafka killed for 50 s | 3,691 (379) | 0 | 10 ms / 17 ms / 60 ms | all checks hold |
 | `partition` | the ledger, then the bank, cut off the network for 20 s | 3,696 (369) | 71 | 10 ms / 2.0 s / 19.5 s | all checks hold |
 | `toxic` | connections to the ledger slowed, cut mid-answer, reset, hung; the bank's hung | 3,661 (405) | 492 | 15 ms / 2.2 s / 16.5 s | all checks hold |
 | `kafka-loss` | Kafka loses all its data; refilled from the event logs | 3,730 (386) | 18,444 | 1.3 s / 91.2 s / 128.3 s | all checks hold |
 | `mixed` | PostgreSQL, Kafka and payments killed; answers cut | 3,633 (381) | 4,866 | 45 ms / 23.5 s / 44.7 s | all checks hold |
 
-Over 33,167 requests, 3,448 of them sent twice at once, nothing was lost and nothing was done twice
+Over 36,842 requests, 3,834 of them sent twice at once, nothing was lost and nothing was done twice
 ([`eval/chaos`](eval/chaos): each scenario's report, the client's summary and the faults' timeline).
 
 - **A dead ledger** is hidden from the payments service's clients. Its account facts are cached, so an
@@ -356,6 +430,16 @@ chaos/run.sh kill-payments          # or baseline, kill-ledger, kill-postgres, k
 python chaos/table.py               # the table above, from eval/chaos
 ```
 
+Fraud: collect in shadow mode, train, then enforce and measure (in the `ledgerline-fraud` image, on the
+Compose network, with `KAFKA=kafka:9092`):
+
+```bash
+python -m fraud.sim                                   # MINUTES, SEED, OUT=/out/truth.jsonl
+python -m fraud.train --truth /out/truth.jsonl --model-dir /model --report /out/offline.json
+python -m fraud.evaluate /out/truth-live.jsonl        # after a run with FRAUD_MODE=enforce
+python -m fraud.parity /out/truth-live.jsonl          # online against offline
+```
+
 The tests, with a throwaway PostgreSQL and Kafka in Docker:
 
 ```bash
@@ -373,9 +457,10 @@ Or with your own: `LEDGERLINE_TEST_DB=jdbc:postgresql://host:5432 LEDGERLINE_TES
 | [`otherbank`](otherbank) | the simulated other bank |
 | [`checker`](checker) | the tools: rebuild the books from Kafka and compare (`check`), refill Kafka from the event logs (`republish`), the chaos client (`workload`) and its proof (`verify`) |
 | [`chaos`](chaos/run.sh) | the chaos runs |
+| [`fraud`](fraud) | Python: the scorer, its features, the simulator, training, evaluation and the online/offline parity check |
 
 The stack is Kotlin 2.3, Spring Boot 4.1 (Spring MVC on virtual threads, JdbcClient, Flyway), Java 25,
-PostgreSQL 18 and Kafka 4.4 (KRaft, one broker).
+PostgreSQL 18 and Kafka 4.4 (KRaft, one broker); the fraud scorer is Python 3.13 (FastAPI, LightGBM, confluent-kafka).
 
 ## Roadmap
 
@@ -384,7 +469,7 @@ PostgreSQL 18 and Kafka 4.4 (KRaft, one broker).
 | 1. Ledger core | done |
 | 2. Payments | done: card payments, refunds and payouts as sagas; an outbox into Kafka |
 | 3. Chaos | done: services, Kafka and the database killed, networks cut and answers lost mid-payment, with a proof that nothing was lost or done twice; an event log for the payments service |
-| 4. Fraud | A simulator with known fraud, real-time features from Kafka, a model scored against the truth |
+| 4. Fraud | done: a simulator with known fraud, real-time features from Kafka, a model scored against the truth, in-line and failing open |
 | 5. Analytics | ClickHouse fed from Kafka; a Vue 3 dashboard |
 | 6. Merchants | A gRPC API, signed webhooks, an SDK |
 | 7. Production | OpenTelemetry tracing, Grafana, alerts |

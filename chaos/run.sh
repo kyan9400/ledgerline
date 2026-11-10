@@ -9,6 +9,7 @@
 #   kill-ledger     the ledger is killed (SIGKILL) three times, 10 s down each
 #   kill-payments   the payments service is killed three times, mid-step
 #   kill-postgres   PostgreSQL is killed twice: both services lose their database
+#   kill-fraud      the fraud scorer is killed twice: payments go on, unscored, until it has rebuilt
 #   kill-kafka      Kafka is down for 50 s
 #   partition       the ledger, then the other bank, cut off the network for 20 s
 #   toxic           payments' connections to the ledger and the bank slowed, cut mid-answer, reset, hung
@@ -69,6 +70,8 @@ case "$scenario" in
     for t in 20 55 90; do at $t; kill9 "$s"; at $((t + 10)); revive "$s"; done ;;
   kill-postgres)
     for t in 30 80; do at $t; kill9 postgres; at $((t + 10)); revive postgres; done ;;
+  kill-fraud)
+    for t in 25 75; do at $t; kill9 fraud; at $((t + 15)); revive fraud; done ;;
   kill-kafka)
     at 20; kill9 kafka; at 70; revive kafka ;;
   partition)

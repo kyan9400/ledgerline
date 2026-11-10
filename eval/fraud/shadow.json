@@ -1,0 +1,47 @@
+{
+ "attempts": 10076,
+ "fraud_attempts": 665,
+ "unscored": 0,
+ "fraud_blocked": 0.0,
+ "fraud_money_blocked": 0.0,
+ "genuine_declined_as_fraud": 0.0,
+ "genuine_money_declined_as_fraud": 0.0,
+ "precision": 0.0,
+ "by_pattern": {
+  "card_testing": {
+   "attempts": 456,
+   "declined_as_fraud": 0.0
+  },
+  "new_merchant": {
+   "attempts": 1431,
+   "declined_as_fraud": 0.0
+  },
+  "single_large": {
+   "attempts": 27,
+   "declined_as_fraud": 0.0
+  },
+  "splurge": {
+   "attempts": 277,
+   "declined_as_fraud": 0.0
+  },
+  "takeover": {
+   "attempts": 182,
+   "declined_as_fraud": 0.0
+  },
+  "usual": {
+   "attempts": 7703,
+   "declined_as_fraud": 0.0
+  }
+ },
+ "episodes": {
+  "count": 108,
+  "stopped_at_the_first_attempt": 0,
+  "attempts_through_before_the_first_block_median": 5.5,
+  "money_lost_share": 1.0
+ },
+ "authorise_ms": {
+  "p50": 14.8,
+  "p95": 24.8,
+  "p99": 39.1
+ }
+}

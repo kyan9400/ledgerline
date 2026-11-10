@@ -59,13 +59,31 @@ jobs:
             grep -q 'tests="[1-9]' "$f" && ! grep -q '<skipped' "$f"
           }
           for t in PropertyTest ConcurrencyTest ApiTest OutboxTest; do check ledger "ledger.$t"; done
-          for t in CardPaymentsTest PayoutsTest RecoveryTest; do check payments "payments.$t"; done
+          for t in CardPaymentsTest PayoutsTest RecoveryTest FraudCheckTest; do check payments "payments.$t"; done
+
+  fraud:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: fraud
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.15"
+      - run: pip install -r requirements.txt
+      - name: Features (windows, once per payment, online equals offline)
+        run: python -m unittest discover -s tests -v
 
   images:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Build the images
-        run: for t in ledger payments otherbank checker; do docker build --target $t -t ledgerline-$t:ci .; done
+        run: |
+          for t in ledger payments otherbank checker; do docker build --target $t -t ledgerline-$t:ci .; done
+          docker build -t ledgerline-fraud:ci fraud
       - name: They run as a non-root user
-        run: for t in ledger payments otherbank checker; do test "$(docker inspect -f '{{.Config.User}}' ledgerline-$t:ci)" = "10001:10001"; done
+        run: |
+          for t in ledger payments otherbank checker; do test "$(docker inspect -f '{{.Config.User}}' ledgerline-$t:ci)" = "10001:10001"; done
+          test "$(docker inspect -f '{{.Config.User}}' ledgerline-fraud:ci)" = "10001"

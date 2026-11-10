@@ -7,3 +7,4 @@ build/
 out/
 load/summary.json
 load/summary-*.json
+eval/fraud-data/
