@@ -83,6 +83,7 @@ jobs:
         run: |
           for t in ledger payments otherbank checker; do docker build --target $t -t ledgerline-$t:ci .; done
           docker build -t ledgerline-fraud:ci fraud
+          docker build -t ledgerline-dashboard:ci dashboard   # type-checks (vue-tsc) and builds the Vue app
       - name: They run as a non-root user
         run: |
           for t in ledger payments otherbank checker; do test "$(docker inspect -f '{{.Config.User}}' ledgerline-$t:ci)" = "10001:10001"; done

@@ -1,0 +1,21 @@
+{
+  "ok" : true,
+  "violations" : {
+    "ledger_events_missing_or_extra" : 0,
+    "payment_events_missing_or_extra" : 0,
+    "balances_not_matching" : 0,
+    "resources_not_matching" : 0,
+    "merchants_captured_not_matching" : 0
+  },
+  "events" : {
+    "ledger_in_postgres" : 169601,
+    "ledger_in_clickhouse" : 169601,
+    "ledger_rows_before_dedup" : 169601,
+    "payments_in_postgres" : 110940,
+    "payments_in_clickhouse" : 110940,
+    "payments_rows_before_dedup" : 110940
+  },
+  "accounts" : 1973,
+  "resources" : 29199,
+  "captured_total" : 3292024636
+}

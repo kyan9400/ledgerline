@@ -8,3 +8,5 @@ out/
 load/summary.json
 load/summary-*.json
 eval/fraud-data/
+dashboard/node_modules/
+dashboard/dist/

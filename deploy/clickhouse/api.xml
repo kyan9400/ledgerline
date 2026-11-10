@@ -1,0 +1,186 @@
+<!-- The dashboard's API: fixed, read-only queries, each at its own URL, taking only a window in minutes
+     (?param_minutes=60). Caddy forwards /api/* here as the read-only dashboard user, and nothing else;
+     the usual HTTP interface (<defaults/>) stays for the tools on the internal network.
+
+     Tables are read with FINAL: an event that arrived twice counts once. -->
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <url>/api/kpis</url>
+            <methods>GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>
+                    SELECT
+                        countIf(entity = 'payment') AS payments,
+                        countIf(entity = 'payment' AND state IN ('authorised', 'capturing', 'captured', 'voiding', 'voided')) AS approved,
+                        countIf(entity = 'payment' AND state = 'declined' AND decline_reason = 'fraud_suspected') AS declined_fraud,
+                        countIf(entity = 'payment' AND state = 'declined' AND decline_reason != 'fraud_suspected') AS declined_other,
+                        sumIf(captured, entity = 'payment') AS captured_minor,
+                        sumIf(amount, entity = 'payment' AND state = 'declined' AND decline_reason = 'fraud_suspected') AS fraud_blocked_minor,
+                        countIf(entity = 'payment' AND fraud_decision = 'unscored') AS unscored,
+                        sumIf(amount, entity = 'refund' AND state = 'refunded') AS refunded_minor,
+                        countIf(entity = 'payout') AS payouts,
+                        countIf(entity = 'payout' AND state = 'settled') AS payouts_settled,
+                        sumIf(amount, entity = 'payout' AND state = 'settled') AS payouts_settled_minor,
+                        countIf(entity = 'payout' AND state IN ('returned', 'refused')) AS payouts_failed,
+                        countIf(state IN ('authorising', 'capturing', 'voiding', 'refunding', 'reserving', 'submitting', 'submitted', 'settling', 'returning')) AS in_progress
+                    FROM analytics.latest FINAL
+                    WHERE created_at >= now64() - toIntervalMinute({minutes:UInt32})
+                    FORMAT JSON
+                </query>
+            </handler>
+        </rule>
+        <rule>
+            <url>/api/throughput</url>
+            <methods>GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>
+                    SELECT toStartOfInterval(created_at, toIntervalSecond(greatest(60, intDiv({minutes:UInt32} * 60, 60)))) AS t,
+                           countIf(state IN ('authorised', 'capturing', 'captured', 'voiding', 'voided')) AS approved,
+                           countIf(state = 'declined' AND decline_reason = 'fraud_suspected') AS declined_fraud,
+                           countIf(state = 'declined' AND decline_reason != 'fraud_suspected') AS declined_other,
+                           countIf(state = 'authorising') AS in_progress,
+                           sum(captured) AS captured_minor
+                    FROM analytics.latest FINAL
+                    WHERE entity = 'payment' AND created_at >= now64() - toIntervalMinute({minutes:UInt32})
+                    GROUP BY t ORDER BY t
+                    FORMAT JSON
+                </query>
+            </handler>
+        </rule>
+        <rule>
+            <url>/api/fraud</url>
+            <methods>GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>
+                    SELECT least(floor(fraud_score * 20) / 20, 0.95) AS bucket,
+                           countIf(fraud_decision = 'approve') AS approved,
+                           countIf(fraud_decision = 'decline') AS declined
+                    FROM analytics.latest FINAL
+                    WHERE entity = 'payment' AND fraud_score IS NOT NULL AND created_at >= now64() - toIntervalMinute({minutes:UInt32})
+                    GROUP BY bucket ORDER BY bucket
+                    FORMAT JSON
+                </query>
+            </handler>
+        </rule>
+        <rule>
+            <url>/api/fraud_reasons</url>
+            <methods>GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>
+                    SELECT reason, count() AS declines
+                    FROM analytics.latest FINAL
+                    ARRAY JOIN splitByChar(',', fraud_reasons) AS reason
+                    WHERE entity = 'payment' AND decline_reason = 'fraud_suspected' AND reason != ''
+                      AND created_at >= now64() - toIntervalMinute({minutes:UInt32})
+                    GROUP BY reason ORDER BY declines DESC LIMIT 6
+                    FORMAT JSON
+                </query>
+            </handler>
+        </rule>
+        <rule>
+            <url>/api/merchants</url>
+            <methods>GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>
+                    SELECT a.code AS merchant, count() AS payments, sum(l.captured) AS captured_minor,
+                           round(countIf(l.state = 'declined') / count(), 4) AS declined_share,
+                           round(avgIf(l.fraud_score, l.fraud_score IS NOT NULL), 4) AS mean_score
+                    FROM analytics.latest AS l FINAL
+                    LEFT JOIN (SELECT account, code FROM analytics.accounts FINAL) AS a ON a.account = l.merchant
+                    WHERE l.entity = 'payment' AND l.created_at >= now64() - toIntervalMinute({minutes:UInt32})
+                    GROUP BY merchant ORDER BY captured_minor DESC LIMIT 8
+                    FORMAT JSON
+                </query>
+            </handler>
+        </rule>
+        <rule>
+            <url>/api/in_flight</url>
+            <methods>GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <!-- What the payments service's own accounts hold, over time: card holds and payouts on their
+                     way. A running sum of every posting to them, from the start; then the window. -->
+                <query>
+                    SELECT t, kind, balance FROM (
+                        SELECT t, kind, sum(delta) OVER (PARTITION BY kind ORDER BY t ROWS UNBOUNDED PRECEDING) AS balance
+                        FROM (
+                            SELECT toStartOfMinute(p.recorded_at) AS t,
+                                   if(startsWith(a.code, 'payments:holds:'), 'holds', 'clearing') AS kind,
+                                   sum(p.amount) AS delta
+                            FROM analytics.postings AS p FINAL
+                            INNER JOIN (SELECT account, code FROM analytics.accounts FINAL
+                                        WHERE startsWith(code, 'payments:holds:') OR startsWith(code, 'payments:clearing:')) AS a
+                                    ON a.account = p.account
+                            GROUP BY t, kind
+                        )
+                    )
+                    WHERE t >= now() - toIntervalMinute({minutes:UInt32})
+                    ORDER BY t, kind
+                    FORMAT JSON
+                </query>
+            </handler>
+        </rule>
+        <rule>
+            <url>/api/payouts</url>
+            <methods>GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>
+                    SELECT state, if(failure_reason = '', '-', failure_reason) AS reason, count() AS payouts, sum(amount) AS amount_minor,
+                           round(quantile(0.5)(dateDiff('millisecond', created_at, updated_at)) / 1000, 2) AS seconds_p50,
+                           round(quantile(0.95)(dateDiff('millisecond', created_at, updated_at)) / 1000, 2) AS seconds_p95
+                    FROM analytics.latest FINAL
+                    WHERE entity = 'payout' AND created_at >= now64() - toIntervalMinute({minutes:UInt32})
+                    GROUP BY state, reason ORDER BY payouts DESC
+                    FORMAT JSON
+                </query>
+            </handler>
+        </rule>
+        <rule>
+            <url>/api/pipeline</url>
+            <methods>GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <!-- How fresh the analytics are: from an event's commit in its service to its row here. -->
+                <query>
+                    SELECT 'ledger.events' AS topic, count() AS events,
+                           quantile(0.5)(dateDiff('millisecond', recorded_at, ingested_at)) AS lag_ms_p50,
+                           quantile(0.95)(dateDiff('millisecond', recorded_at, ingested_at)) AS lag_ms_p95,
+                           dateDiff('second', max(recorded_at), now64()) AS last_event_s
+                    FROM analytics.ledger_events WHERE recorded_at >= now64() - toIntervalMinute({minutes:UInt32})
+                    UNION ALL
+                    SELECT 'payments.events', count(),
+                           quantile(0.5)(dateDiff('millisecond', recorded_at, ingested_at)),
+                           quantile(0.95)(dateDiff('millisecond', recorded_at, ingested_at)),
+                           dateDiff('second', max(recorded_at), now64())
+                    FROM analytics.payment_events WHERE recorded_at >= now64() - toIntervalMinute({minutes:UInt32})
+                    FORMAT JSON
+                </query>
+            </handler>
+        </rule>
+        <rule>
+            <url>/api/books</url>
+            <methods>GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <!-- The whole ledger, from ClickHouse alone: money by kind of account, and the sum (zero). -->
+                <query>
+                    SELECT a.kind AS kind, a.currency AS currency, count() AS accounts, sum(b.balance) AS balance_minor
+                    FROM (SELECT account, kind, currency FROM analytics.accounts FINAL) AS a
+                    LEFT JOIN (SELECT account, sum(amount) AS balance FROM analytics.postings FINAL GROUP BY account) AS b
+                        ON b.account = a.account
+                    GROUP BY kind, currency
+                    ORDER BY kind
+                    FORMAT JSON
+                </query>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

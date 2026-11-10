@@ -1,0 +1,93 @@
+{
+  "ok" : true,
+  "violations" : {
+    "requests_never_answered" : 0,
+    "keys_answered_with_two_resources" : 0,
+    "reconciliation_failed" : 0,
+    "ledger_audit_failed" : 0,
+    "payments_the_client_never_heard_of" : 0,
+    "payments_the_client_was_told_of_but_missing" : 0,
+    "refunds_the_client_never_heard_of" : 0,
+    "refunds_the_client_was_told_of_but_missing" : 0,
+    "payouts_the_client_never_heard_of" : 0,
+    "payouts_the_client_was_told_of_but_missing" : 0,
+    "postings_not_matching_final_state" : 0,
+    "balances_not_as_the_final_states_say" : 0,
+    "kafka_rebuild_failed" : 0
+  },
+  "seconds_until_quiet" : 0,
+  "reconciliation" : {
+    "ok" : true,
+    "quiet" : true,
+    "inProgress" : {
+      "payments" : 0,
+      "refunds" : 0,
+      "payouts" : 0
+    },
+    "violations" : {
+      "stuck" : 0,
+      "event_log_not_matching_state" : 0,
+      "refunds_not_summing" : 0,
+      "holds_not_matching_authorised" : 0,
+      "clearing_not_matching_sent" : 0,
+      "settlement_not_matching_settled" : 0,
+      "bank_records_not_matching" : 0
+    },
+    "totals" : {
+      "payments" : 25908,
+      "refunds" : 2038,
+      "payouts" : 1253
+    }
+  },
+  "ledger_audit_violations" : {
+    "currencies_not_summing_to_zero" : 0,
+    "unbalanced_transactions" : 0,
+    "balances_not_matching_events" : 0,
+    "entries_not_matching_events" : 0,
+    "transactions_not_matching_events" : 0,
+    "overdrawn_accounts" : 0
+  },
+  "resources" : {
+    "payments" : {
+      "authorised" : 136,
+      "captured" : 1026,
+      "declined" : 56,
+      "voided" : 225
+    },
+    "refunds" : {
+      "refunded" : 568
+    },
+    "payouts" : {
+      "returned" : 20,
+      "settled" : 337
+    }
+  },
+  "fraud_decisions" : {
+    "approve" : 1387,
+    "decline" : 56
+  },
+  "kafka" : {
+    "ledger" : {
+      "outbox_pending" : 0,
+      "records_read" : 169601,
+      "duplicates_skipped" : 0,
+      "gaps" : 0,
+      "streams_starting_late" : 0,
+      "distinct_events" : 169601,
+      "events_in_ledger" : 169601,
+      "accounts" : 1973,
+      "accounts_not_matching" : 0
+    },
+    "payments" : {
+      "outbox_pending" : 0,
+      "records_read" : 110940,
+      "duplicates_skipped" : 0,
+      "gaps" : 0,
+      "streams" : 29199,
+      "streams_starting_late" : 0,
+      "streams_not_in_kafka" : 0,
+      "streams_not_matching" : 0
+    },
+    "ok" : true
+  }
+}

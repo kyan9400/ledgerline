@@ -9,6 +9,7 @@ SCENARIOS = [
     ("kill-payments", "the payments service killed 3 times, mid-step"),
     ("kill-postgres", "PostgreSQL killed twice: both services lose their database"),
     ("kill-fraud", "the fraud scorer killed twice, 15 s each"),
+    ("kill-clickhouse", "ClickHouse killed twice mid-ingestion, 15 s each"),
     ("kill-kafka", "Kafka killed for 50 s"),
     ("partition", "the ledger, then the bank, cut off the network for 20 s"),
     ("toxic", "connections to the ledger slowed, cut mid-answer, reset, hung; the bank's hung"),

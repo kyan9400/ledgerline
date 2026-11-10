@@ -6,7 +6,7 @@ it as state machines and sagas, and every change reaches Kafka through a transac
 written in Kotlin and Spring Boot on PostgreSQL and Kafka. Each property it promises is checked by tests
 that try hard to break it.
 
-> Work in progress: stages 1 to 4 of 8 are done (see [the plan](#roadmap)). All accounts and money in
+> Work in progress: stages 1 to 5 of 8 are done (see [the plan](#roadmap)). All accounts and money in
 > it are made up.
 
 ```
@@ -220,6 +220,56 @@ declining as they pay ([`eval/fraud/live.json`](eval/fraud/live.json)):
 - **Killing the scorer** is a chaos scenario: payments go on unscored while it is down, then it rebuilds
   and scores again. Nothing else changes.
 
+## Analytics
+
+![The dashboard](docs/screenshots/dashboard.png)
+
+ClickHouse reads both topics with its Kafka engine ([`init.sql`](deploy/clickhouse/init.sql)), and
+materialized views turn the events into tables:
+
+- every ledger event, and from them every posting and every account;
+- every payment event, and from them each payment, refund and payout as it is now.
+
+**Duplicates count once.** Delivery is at least once: the relays may send an event twice, and the Kafka
+engine commits only after the views have written. So each table is a `ReplacingMergeTree` keyed by the
+event's identity (`stream`, `version`), and is read with `FINAL`.
+
+**It agrees with the ledger, to the kopeck.** `checker analytics` compares ClickHouse, fed only from
+Kafka, with the services' databases:
+
+- the same number of distinct events;
+- every account's postings summing to its balance, at its version;
+- every payment, refund and payout in the same state, at the same version;
+- every merchant's captured total.
+
+After a day of simulated traffic and every chaos run: 169,601 ledger events, 110,940 payment events,
+1,973 accounts and 29,199 payments, refunds and payouts, with no difference. That includes ClickHouse
+itself killed twice mid-ingestion (`kill-clickhouse`, in the table [below](#chaos)). Payment clients
+didn't notice it was gone: analytics hangs off Kafka, not off the payment path. Events reach ClickHouse
+about 0.5 s after their commit (p95 1 s).
+
+**The dashboard has no API server of its own.** ClickHouse serves a fixed set of read-only queries at
+their own URLs (`/api/kpis`, `/api/throughput`, ...: [`api.xml`](deploy/clickhouse/api.xml)), each taking
+only a time window. They run as a read-only user limited to the analytics database, with a 10 s cap,
+and answer in 5–30 ms. Caddy serves the Vue app and forwards just those GET paths. Any other path, any
+other method, and ClickHouse's own query interface get a 404 from outside.
+
+**What it shows**, in a window of 15 minutes to a day, refreshed every 5 s:
+
+- card payments by outcome: approved, declined as fraud, declined for other reasons;
+- money captured;
+- the money in flight: card holds, and payouts on their way to other banks;
+- the fraud scores, by decision;
+- the model's reasons for its declines, in words;
+- payouts by outcome, with how long they took;
+- the top merchants;
+- the books from ClickHouse alone: by kind of account, summing to zero;
+- the pipeline's lag.
+
+Each chart can be shown as a table. Both themes are designed: the colours are a validated palette, in
+fixed order, with light and dark steps chosen separately
+([dark](docs/screenshots/dashboard-dark.png)). It works down to a phone's width.
+
 ## Tested to break
 
 The tests run against a real PostgreSQL and Kafka. The payments tests run a real ledger and the
@@ -301,13 +351,14 @@ system, while a client keeps paying.
 | `kill-payments` | the payments service killed 3 times, mid-step | 3,700 (370) | 18,820 | 2.2 s / 87.5 s / 137.0 s | all checks hold |
 | `kill-postgres` | PostgreSQL killed twice: both services lose their database | 3,667 (384) | 2,397 | 13 ms / 10.7 s / 23.9 s | all checks hold |
 | `kill-fraud` | the fraud scorer (enforcing) killed twice, 15 s each | 3,675 (386) | 249 | 12 ms / 488 ms / 5.3 s | all checks hold |
+| `kill-clickhouse` | ClickHouse killed twice mid-ingestion, 15 s each | 3,619 (354) | 0 | 12 ms / 21 ms / 84 ms | all checks hold, and analytics agrees |
 | `kill-kafka` | Kafka killed for 50 s | 3,691 (379) | 0 | 10 ms / 17 ms / 60 ms | all checks hold |
 | `partition` | the ledger, then the bank, cut off the network for 20 s | 3,696 (369) | 71 | 10 ms / 2.0 s / 19.5 s | all checks hold |
 | `toxic` | connections to the ledger slowed, cut mid-answer, reset, hung; the bank's hung | 3,661 (405) | 492 | 15 ms / 2.2 s / 16.5 s | all checks hold |
 | `kafka-loss` | Kafka loses all its data; refilled from the event logs | 3,730 (386) | 18,444 | 1.3 s / 91.2 s / 128.3 s | all checks hold |
 | `mixed` | PostgreSQL, Kafka and payments killed; answers cut | 3,633 (381) | 4,866 | 45 ms / 23.5 s / 44.7 s | all checks hold |
 
-Over 36,842 requests, 3,834 of them sent twice at once, nothing was lost and nothing was done twice
+Over 40,461 requests, 4,188 of them sent twice at once, nothing was lost and nothing was done twice
 ([`eval/chaos`](eval/chaos): each scenario's report, the client's summary and the faults' timeline).
 
 - **A dead ledger** is hidden from the payments service's clients. Its account facts are cached, so an
@@ -440,6 +491,10 @@ python -m fraud.evaluate /out/truth-live.jsonl        # after a run with FRAUD_M
 python -m fraud.parity /out/truth-live.jsonl          # online against offline
 ```
 
+The dashboard listens on the host's loopback only (port 18480): `ssh -L 18480:127.0.0.1:18480 <host>`, then
+open `http://localhost:18480`. Whether ClickHouse agrees with the databases:
+`docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm checker analytics`.
+
 The tests, with a throwaway PostgreSQL and Kafka in Docker:
 
 ```bash
@@ -458,9 +513,12 @@ Or with your own: `LEDGERLINE_TEST_DB=jdbc:postgresql://host:5432 LEDGERLINE_TES
 | [`checker`](checker) | the tools: rebuild the books from Kafka and compare (`check`), refill Kafka from the event logs (`republish`), the chaos client (`workload`) and its proof (`verify`) |
 | [`chaos`](chaos/run.sh) | the chaos runs |
 | [`fraud`](fraud) | Python: the scorer, its features, the simulator, training, evaluation and the online/offline parity check |
+| [`dashboard`](dashboard) | Vue 3 and Chart.js, served by Caddy |
+| [`deploy/clickhouse`](deploy/clickhouse) | the analytics schema (Kafka engine, materialized views) and the dashboard's endpoints |
 
 The stack is Kotlin 2.3, Spring Boot 4.1 (Spring MVC on virtual threads, JdbcClient, Flyway), Java 25,
-PostgreSQL 18 and Kafka 4.4 (KRaft, one broker); the fraud scorer is Python 3.13 (FastAPI, LightGBM, confluent-kafka).
+PostgreSQL 18 and Kafka 4.4 (KRaft, one broker); the fraud scorer is Python 3.13 (FastAPI, LightGBM,
+confluent-kafka); analytics is ClickHouse 26.8 and a Vue 3.5 dashboard (TypeScript, Chart.js).
 
 ## Roadmap
 
@@ -470,7 +528,7 @@ PostgreSQL 18 and Kafka 4.4 (KRaft, one broker); the fraud scorer is Python 3.13
 | 2. Payments | done: card payments, refunds and payouts as sagas; an outbox into Kafka |
 | 3. Chaos | done: services, Kafka and the database killed, networks cut and answers lost mid-payment, with a proof that nothing was lost or done twice; an event log for the payments service |
 | 4. Fraud | done: a simulator with known fraud, real-time features from Kafka, a model scored against the truth, in-line and failing open |
-| 5. Analytics | ClickHouse fed from Kafka; a Vue 3 dashboard |
+| 5. Analytics | done: ClickHouse fed from Kafka, proven to agree with the ledger; a Vue 3 dashboard |
 | 6. Merchants | A gRPC API, signed webhooks, an SDK |
 | 7. Production | OpenTelemetry tracing, Grafana, alerts |
 | 8. Publishing | Demo, write-up |

@@ -1,0 +1,24 @@
+{
+  "run" : "chaos-mwa6scvj",
+  "flows" : 1800,
+  "requests" : 3619,
+  "by_kind_and_status" : {
+    "authorise 201" : 1443,
+    "capture 200" : 1026,
+    "payout 202" : 357,
+    "refund 201" : 568,
+    "void 200" : 225
+  },
+  "sent_twice_at_once" : 354,
+  "attempts" : 3973,
+  "requests_retried" : 354,
+  "unresolved" : 0,
+  "errors_seen" : { },
+  "ms_to_answer" : {
+    "p50" : 12,
+    "p95" : 21,
+    "p99" : 34,
+    "max" : 84
+  },
+  "log" : "/out/kill-clickhouse.log.json"
+}

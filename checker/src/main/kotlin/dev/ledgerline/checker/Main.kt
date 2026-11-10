@@ -12,6 +12,7 @@ import kotlin.system.exitProcess
  * checker workload <log.json>    a client that keeps paying, and logs every request and answer
  * checker verify <log.json>      prove from that log, the ledger and both databases that nothing was
  *                                lost or done twice
+ * checker analytics              prove ClickHouse (fed from Kafka) agrees with both databases
  * ```
  *
  * Each prints a JSON report and exits 0 when everything holds, 1 when something doesn't.
@@ -23,6 +24,7 @@ fun main(args: Array<String>) {
         "republish" -> republish(env, args.getOrNull(1) ?: usage())
         "workload" -> workload(env, args.getOrNull(1) ?: usage())
         "verify" -> verify(env, args.getOrNull(1) ?: usage())
+        "analytics" -> analytics(env)
         else -> usage()
     }
     println(JsonMapper.builder().build().writerWithDefaultPrettyPrinter().writeValueAsString(report))
@@ -30,6 +32,6 @@ fun main(args: Array<String>) {
 }
 
 private fun usage(): Nothing {
-    System.err.println("usage: checker check | republish <ledger|payments> | workload <log.json> | verify <log.json>")
+    System.err.println("usage: checker check | republish <ledger|payments> | workload <log.json> | verify <log.json> | analytics")
     exitProcess(2)
 }

@@ -10,6 +10,7 @@
 #   kill-payments   the payments service is killed three times, mid-step
 #   kill-postgres   PostgreSQL is killed twice: both services lose their database
 #   kill-fraud      the fraud scorer is killed twice: payments go on, unscored, until it has rebuilt
+#   kill-clickhouse ClickHouse is killed twice mid-ingestion: it must catch up, missing nothing, counting nothing twice
 #   kill-kafka      Kafka is down for 50 s
 #   partition       the ledger, then the other bank, cut off the network for 20 s
 #   toxic           payments' connections to the ledger and the bank slowed, cut mid-answer, reset, hung
@@ -72,6 +73,8 @@ case "$scenario" in
     for t in 30 80; do at $t; kill9 postgres; at $((t + 10)); revive postgres; done ;;
   kill-fraud)
     for t in 25 75; do at $t; kill9 fraud; at $((t + 15)); revive fraud; done ;;
+  kill-clickhouse)
+    for t in 25 75; do at $t; kill9 clickhouse; at $((t + 15)); revive clickhouse; done ;;
   kill-kafka)
     at 20; kill9 kafka; at 70; revive kafka ;;
   partition)
@@ -130,4 +133,7 @@ set +e
 $C run --rm -v "$PWD/$out:/out" checker verify "/out/$scenario.log.json" 2>/dev/null | sed -n '/^{/,$p' > "$out/$scenario.json"
 event "verified: $(grep -m1 '"ok"' "$out/$scenario.json")"
 rm -f "$out/$scenario.log.json" "$out/$scenario.ready"   # the log is large; the summaries stay
-grep -q '"ok" : true' "$out/$scenario.json"
+# Analytics, fed from Kafka, must agree with the databases too (it waits for ClickHouse to catch up).
+$C run --rm checker analytics 2>/dev/null | sed -n '/^{/,$p' > "$out/$scenario.analytics.json"
+event "analytics: $(grep -m1 '"ok"' "$out/$scenario.analytics.json")"
+grep -q '"ok" : true' "$out/$scenario.json" && grep -q '"ok" : true' "$out/$scenario.analytics.json"

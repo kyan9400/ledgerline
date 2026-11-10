@@ -1,0 +1,9 @@
+0s load starts: kill-clickhouse, 120s, 15 flows/s, seed 20261110
+25s kill -9 clickhouse
+40s start clickhouse
+75s kill -9 clickhouse
+90s start clickhouse
+121s load done
+123s verifying
+134s verified:   "ok" : true,
+137s analytics:   "ok" : true,

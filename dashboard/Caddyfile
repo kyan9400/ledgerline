@@ -1,0 +1,34 @@
+# The dashboard: the built Vue app, and /api/* to ClickHouse's fixed, read-only endpoints as the
+# dashboard user. Nothing else of ClickHouse is reachable through here.
+:80 {
+	encode zstd gzip
+
+	@api {
+		method GET
+		path_regexp ^/api/(kpis|throughput|fraud|fraud_reasons|merchants|in_flight|payouts|pipeline|books)$
+	}
+	handle @api {
+		reverse_proxy clickhouse:8123 {
+			header_up X-ClickHouse-User dashboard
+			header_up X-ClickHouse-Key {$CLICKHOUSE_DASHBOARD_PASSWORD}
+			header_up -Authorization
+			header_up -Cookie
+		}
+	}
+	handle /api/* {
+		respond 404
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+		header /assets/* Cache-Control "public, max-age=31536000, immutable"
+	}
+
+	header {
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}

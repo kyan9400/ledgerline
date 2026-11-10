@@ -1,0 +1,22 @@
+<!-- The dashboard's user: read-only, only the analytics database, short queries. Caddy logs in as it, and
+     forwards only the dashboard's own endpoints (http_handlers in api.xml). -->
+<clickhouse>
+    <profiles>
+        <dashboard>
+            <readonly>1</readonly>
+            <max_execution_time>10</max_execution_time>
+            <max_result_rows>20000</max_result_rows>
+            <max_memory_usage>268435456</max_memory_usage>
+        </dashboard>
+    </profiles>
+    <users>
+        <dashboard>
+            <password from_env="CLICKHOUSE_DASHBOARD_PASSWORD"/>
+            <profile>dashboard</profile>
+            <networks><ip>::/0</ip></networks>
+            <grants>
+                <query>GRANT SELECT ON analytics.*</query>
+            </grants>
+        </dashboard>
+    </users>
+</clickhouse>
