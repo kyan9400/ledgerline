@@ -1,0 +1,119 @@
+// Ledgerline's API for merchants: card payments, and a live stream of what happens to them.
+//
+// Authentication: every call carries the merchant's API key, `authorization: Bearer ll_sk_...`. A
+// merchant sees and acts on its own payments only; another's are NOT_FOUND.
+//
+// Idempotency: every write carries `idempotency-key: <any string up to 200>`. Sent again with the same
+// key (after a timeout, say), a write gets the first answer and doesn't happen twice; the same key with a
+// different request is FAILED_PRECONDITION. Keys are the merchant's own: two merchants can't collide.
+// A response says whether it was replayed in the header `idempotent-replayed: true`.
+//
+// Errors: the gRPC status, and a stable code in the trailer `ledgerline-error-code` (insufficient_funds,
+// invalid_state, refund_exceeds_capture, ...). UNAVAILABLE is safe to retry with the same key.
+//
+// Amounts are whole minor units (kopecks, cents).
+syntax = "proto3";
+
+package ledgerline.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_package = "dev.ledgerline.api.v1";
+
+service Merchants {
+  // Hold the customer's money for this merchant. The answer is the payment: authorised, declined (not
+  // enough money, or suspected fraud), or still authorising (it finishes shortly: watch or get it).
+  rpc Authorise(AuthoriseRequest) returns (Payment);
+  // Take all of the hold, or less (the rest goes back to the customer). Once.
+  rpc Capture(CaptureRequest) returns (Payment);
+  // Give the whole hold back.
+  rpc VoidPayment(VoidRequest) returns (Payment);
+  // Give captured money back, in parts if wanted; never more than was captured.
+  rpc RefundPayment(RefundRequest) returns (Refund);
+  rpc GetPayment(GetPaymentRequest) returns (Payment);
+  // Newest first.
+  rpc ListPayments(ListPaymentsRequest) returns (ListPaymentsResponse);
+  // Every change to this merchant's payments and refunds, as it happens. `from` resumes where an earlier
+  // stream stopped (each event carries its `cursor`); empty means from now. Delivery is at least once:
+  // an event may come again, so keep, per payment, the last version handled.
+  rpc WatchPayments(WatchRequest) returns (stream PaymentEvent);
+}
+
+message AuthoriseRequest {
+  string customer = 1;      // the card's account (in this simulation, the customer's ledger account id)
+  int64 amount = 2;
+  string description = 3;
+}
+
+message CaptureRequest {
+  string payment_id = 1;
+  optional int64 amount = 2;  // all of it when absent
+}
+
+message VoidRequest {
+  string payment_id = 1;
+}
+
+message RefundRequest {
+  string payment_id = 1;
+  int64 amount = 2;
+}
+
+message GetPaymentRequest {
+  string payment_id = 1;
+}
+
+message ListPaymentsRequest {
+  int32 page_size = 1;      // at most 100
+  string page_token = 2;    // from the previous page
+}
+
+message ListPaymentsResponse {
+  repeated Payment payments = 1;
+  string next_page_token = 2;  // empty on the last page
+}
+
+message WatchRequest {
+  string from = 1;
+}
+
+message Payment {
+  string id = 1;
+  // authorising, authorised, declined, capturing, captured, voiding, voided
+  string state = 2;
+  string customer = 3;
+  string currency = 4;
+  int64 amount = 5;
+  int64 captured = 6;
+  int64 refunded = 7;
+  string decline_reason = 8;   // insufficient_funds, fraud_suspected, ...
+  string void_reason = 9;      // requested, expired
+  string description = 10;
+  int32 version = 11;          // grows with every change
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+  optional double fraud_score = 14;
+}
+
+message Refund {
+  string id = 1;
+  string payment_id = 2;
+  string state = 3;            // refunding, refunded, failed
+  int64 amount = 4;
+  string failure_reason = 5;
+  int32 version = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message PaymentEvent {
+  string id = 1;               // stream:version, e.g. payment-<id>:3: the same id as the webhook's
+  string type = 2;             // payment.captured, refund.refunded, ...
+  string cursor = 3;           // pass as WatchRequest.from to resume after this event
+  google.protobuf.Timestamp recorded_at = 4;
+  oneof resource {
+    Payment payment = 5;
+    Refund refund = 6;
+  }
+}

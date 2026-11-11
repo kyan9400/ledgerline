@@ -38,7 +38,7 @@ class Payouts(
     json: JsonMapper,
     meters: MeterRegistry,
 ) {
-    val payouts = Machine(db, outbox, json, clock, meters, "payouts", "payout", PAYOUT_STEPS) { payout(it) }
+    val payouts = Machine(db, outbox, json, clock, meters, "payouts", "payout", PAYOUT_STEPS, { payout(it) })
 
     fun createIn(req: PayoutRequest): Payout {
         if (req.amount <= 0) throw Invalid("amount must be positive")

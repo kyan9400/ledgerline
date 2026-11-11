@@ -1,0 +1,6 @@
+0s the shop starts paying; its webhook endpoint refuses everything for 30 s
+25s kill -9 payments
+35s start payments
+67s the shop is done:  "ok": true,
+67s reconciliation: "ok":true
+69s analytics:   "ok" : true,

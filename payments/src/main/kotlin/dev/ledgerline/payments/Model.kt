@@ -33,6 +33,8 @@ data class Payment(
 data class Refund(
     val id: UUID,
     val payment: UUID,
+    /** The payment's merchant: whose webhooks and event stream the refund goes to. */
+    val merchant: UUID,
     val state: String,
     val amount: Long,
     val failureReason: String?,

@@ -76,6 +76,7 @@ abstract class PaymentsTest {
             registry.add("payments.otherbank.url") { World.bankUrl }
             registry.add("payments.authorisation-ttl") { "5s" }
             registry.add("admission.max-in-flight") { "64" }
+            registry.add("payments.grpc.port") { "0" }
             registry.add("outbox.kafka.bootstrap-servers") { System.getenv("LEDGERLINE_TEST_KAFKA") ?: "" }
         }
     }

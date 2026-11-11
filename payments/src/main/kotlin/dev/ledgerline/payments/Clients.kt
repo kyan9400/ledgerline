@@ -102,8 +102,8 @@ class LedgerOps(val client: LedgerClient) {
             is Outcome.Unavailable -> throw LedgerUnavailable(o.reason)
         }
 
-    fun openAccount(key: String, code: String, currency: String, allowNegative: Boolean): Outcome = client.post(
-        "/v1/accounts", key, mapOf("code" to code, "currency" to currency, "kind" to "system", "allowNegative" to allowNegative),
+    fun openAccount(key: String, code: String, currency: String, allowNegative: Boolean, kind: String = "system"): Outcome = client.post(
+        "/v1/accounts", key, mapOf("code" to code, "currency" to currency, "kind" to kind, "allowNegative" to allowNegative),
     )
 
     fun transfer(key: String, from: UUID, to: UUID, amount: Long, description: String, metadata: Map<String, String>): Outcome =
@@ -127,8 +127,11 @@ class LedgerOps(val client: LedgerClient) {
     )
 }
 
-/** The other bank, as the payout saga sees it. */
-class BankClient(private val http: HttpService) {
+/**
+ * The other bank, as the payout saga sees it. Payout calls have a short timeout (a slow bank is an
+ * unavailable one, retried later); the listing for reconciliation, which grows with every payout, a long one.
+ */
+class BankClient(private val http: HttpService, private val listing: HttpService = http) {
     sealed interface Submitted {
         data object Accepted : Submitted
 
@@ -160,7 +163,7 @@ class BankClient(private val http: HttpService) {
     }
 
     /** Everything the bank has received: for reconciliation. */
-    fun received(): List<JsonNode> = when (val o = http.get("/transfers")) {
+    fun received(): List<JsonNode> = when (val o = listing.get("/transfers")) {
         is Outcome.Done -> o.body.toList()
         is Outcome.Refused -> error("the bank refused the listing: ${o.code}")
         is Outcome.Unavailable -> error("the bank is unavailable: ${o.reason}")

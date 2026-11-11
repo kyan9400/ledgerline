@@ -1,0 +1,24 @@
+{
+ "ok": true,
+ "orders": 232,
+ "payments_by_state": {
+  "voided": 43,
+  "captured": 188,
+  "declined": 1
+ },
+ "refunds": 80,
+ "errors": {},
+ "events_expected": 1085,
+ "webhooks": {
+  "received": 1086,
+  "missing": 0,
+  "duplicates_skipped": 0,
+  "refused_while_down": 1609,
+  "bad_signatures": 0
+ },
+ "stream": {
+  "received": 1085,
+  "missing": 0
+ },
+ "seconds": 62
+}

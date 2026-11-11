@@ -6,7 +6,7 @@ it as state machines and sagas, and every change reaches Kafka through a transac
 written in Kotlin and Spring Boot on PostgreSQL and Kafka. Each property it promises is checked by tests
 that try hard to break it.
 
-> Work in progress: stages 1 to 5 of 8 are done (see [the plan](#roadmap)). All accounts and money in
+> Work in progress: stages 1 to 6 of 8 are done (see [the plan](#roadmap)). All accounts and money in
 > it are made up.
 
 ```
@@ -270,6 +270,70 @@ Each chart can be shown as a table. Both themes are designed: the colours are a 
 fixed order, with light and dark steps chosen separately
 ([dark](docs/screenshots/dashboard-dark.png)). It works down to a phone's width.
 
+## Merchants
+
+Merchants use a gRPC API ([`merchants.proto`](proto/ledgerline/v1/merchants.proto)), served by the payments
+service on its own port:
+
+```
+Authorise   CapturePayment   VoidPayment   RefundPayment   GetPayment   ListPayments
+WatchPayments   a live stream of every change to the merchant's payments and refunds
+```
+
+- **Each merchant is on its own.**
+  - It has an API key (`authorization: Bearer ll_sk_...`, stored only as a SHA-256) and a merchant
+    account in the ledger.
+  - It is the payee of everything it authorises, and sees nothing else: another merchant's payment is
+    `NOT_FOUND`, not "forbidden", which would say that it exists.
+- **The same writes as the HTTP API.** Both go through one code path, so a write over gRPC has the same
+  idempotency and the same steps.
+  - The key comes as metadata (`idempotency-key`), and is the merchant's own: two shops using `order-1`
+    don't collide.
+  - A replay is marked by the `idempotent-replayed` header.
+  - A refusal is a gRPC status plus a stable code in the `ledgerline-error-code` trailer
+    (`insufficient_funds`, `invalid_state`, ...).
+- **The live stream comes from Kafka.** A cursor over the database's event log would skip an event whose
+  transaction commits after a later one's. Kafka's offsets have no such gaps. Each event carries a
+  cursor to resume from.
+
+**Webhooks**, for every change to a merchant's payments and refunds:
+
+- **Queued with the change.** A delivery is written in the same database transaction as the change it
+  describes, so it is sent if and only if the change commits.
+- **Signed.** `Ledgerline-Signature: t=<time>,v1=<HMAC-SHA256 of "t.body">`, keyed by the merchant's
+  secret. A receiver checks the signature and that `t` is recent, so a recorded request can't be
+  replayed.
+- **Retried.** Anything but a 2xx is tried again: after 1 s, doubling, up to 10 minutes apart, 12 times.
+  After that the delivery is kept as failed and can be redelivered. Each event carries its id
+  (`stream:version`), so a receiver can skip one it has seen.
+
+**The SDK** ([`sdk`](sdk), TypeScript, Node 24):
+
+```ts
+const ledgerline = new Ledgerline({ target: "payments:9090", apiKey });
+const payment = await ledgerline.authorise({ customer, amount: 12_500 }, { idempotencyKey: orderId });
+await ledgerline.capture(payment.id);
+for await (const event of ledgerline.watch()) { ... }        // resumes by itself if the stream breaks
+const event = verifyWebhook(rawBody, req.headers["ledgerline-signature"], webhookSecret);
+```
+
+- **Safe retries.** A write that gets no answer is sent again with the same idempotency key, backing off
+  with jitter, for up to 30 s, which is long enough to ride out a restart of the service.
+- **Signatures agree across languages.** Webhook verification is constant-time. The server (Kotlin) and
+  the SDK are tested against the same signature value, so they can't drift apart.
+
+**End to end, while things break** ([`chaos/merchant.sh`](chaos/merchant.sh),
+[`eval/merchant`](eval/merchant)): an example shop ([`shop.ts`](sdk/examples/shop.ts)) took card payments
+through the SDK for a minute.
+
+- **The faults:** its own webhook endpoint refused everything for the first 30 s, and the payments
+  service was killed at 25 s and came back at 35 s, mid-payment.
+- **The orders:** 232, with no errors. The SDK rode out the restart, retrying with the same keys.
+- **Every change was heard.** All 1,085 changes Ledgerline recorded for the shop's payments and refunds
+  arrived as signed webhooks: none missing and no bad signatures, after 1,609 deliveries had been
+  refused during the outage. All 1,085 also came through the live stream.
+- **The books held:** the reconciliation and the analytics check passed.
+
 ## Tested to break
 
 The tests run against a real PostgreSQL and Kafka. The payments tests run a real ledger and the
@@ -495,6 +559,10 @@ The dashboard listens on the host's loopback only (port 18480): `ssh -L 18480:12
 open `http://localhost:18480`. Whether ClickHouse agrees with the databases:
 `docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm checker analytics`.
 
+A merchant, end to end: `chaos/merchant.sh` (it builds on the `ledgerline-shop` image: `docker build -f
+sdk/Dockerfile -t ledgerline-shop .`). A merchant of your own: `POST /internal/merchants {name, webhookUrl}`
+on the payments service gives its API key and webhook secret, once.
+
 The tests, with a throwaway PostgreSQL and Kafka in Docker:
 
 ```bash
@@ -514,11 +582,14 @@ Or with your own: `LEDGERLINE_TEST_DB=jdbc:postgresql://host:5432 LEDGERLINE_TES
 | [`chaos`](chaos/run.sh) | the chaos runs |
 | [`fraud`](fraud) | Python: the scorer, its features, the simulator, training, evaluation and the online/offline parity check |
 | [`dashboard`](dashboard) | Vue 3 and Chart.js, served by Caddy |
+| [`proto`](proto/ledgerline/v1/merchants.proto), [`api`](api) | the merchants' gRPC API: its contract, and the Java code generated from it |
+| [`sdk`](sdk) | TypeScript: the merchants' SDK, its tests, and an example shop |
 | [`deploy/clickhouse`](deploy/clickhouse) | the analytics schema (Kafka engine, materialized views) and the dashboard's endpoints |
 
 The stack is Kotlin 2.3, Spring Boot 4.1 (Spring MVC on virtual threads, JdbcClient, Flyway), Java 25,
 PostgreSQL 18 and Kafka 4.4 (KRaft, one broker); the fraud scorer is Python 3.13 (FastAPI, LightGBM,
-confluent-kafka); analytics is ClickHouse 26.8 and a Vue 3.5 dashboard (TypeScript, Chart.js).
+confluent-kafka); analytics is ClickHouse 26.8 and a Vue 3.5 dashboard (TypeScript, Chart.js); merchants use gRPC (grpc-java 1.85,
+protobuf 4.36) and a TypeScript SDK (Node 24, grpc-js).
 
 ## Roadmap
 
@@ -529,6 +600,6 @@ confluent-kafka); analytics is ClickHouse 26.8 and a Vue 3.5 dashboard (TypeScri
 | 3. Chaos | done: services, Kafka and the database killed, networks cut and answers lost mid-payment, with a proof that nothing was lost or done twice; an event log for the payments service |
 | 4. Fraud | done: a simulator with known fraud, real-time features from Kafka, a model scored against the truth, in-line and failing open |
 | 5. Analytics | done: ClickHouse fed from Kafka, proven to agree with the ledger; a Vue 3 dashboard |
-| 6. Merchants | A gRPC API, signed webhooks, an SDK |
+| 6. Merchants | done: a gRPC API, signed webhooks, a TypeScript SDK, proven end to end while things break |
 | 7. Production | OpenTelemetry tracing, Grafana, alerts |
 | 8. Publishing | Demo, write-up |

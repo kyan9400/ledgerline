@@ -133,6 +133,7 @@ class Machine(
     private val entity: String,
     private val steps: Set<String>,
     private val snapshot: (UUID) -> Any,
+    private val webhooks: Webhooks? = null,
 ) {
     /** In the caller's transaction. A step state is picked up by the worker at once, or after the lease. */
     fun change(id: UUID, fromVersion: Int, to: String, set: Map<String, Any?> = emptyMap(), lease: Boolean = false): Boolean {
@@ -160,10 +161,18 @@ class Machine(
 
     private fun record(id: UUID, version: Int, state: String, at: java.time.Instant) {
         val stream = "$entity-$id"
-        val data = json.writeValueAsString(snapshot(id))
+        val snap = snapshot(id)
+        val data = json.writeValueAsString(snap)
         db.sql("INSERT INTO events (stream, version, type, data, recorded_at) VALUES (:s, :v, :t, :d::jsonb, :at)")
             .param("s", stream).param("v", version).param("t", "$entity.$state").param("d", data).param("at", Timestamp.from(at)).update()
         outbox.addJson(PAYMENTS_TOPIC, stream, version, "$entity.$state", data, at)
+        // The merchant's webhook, queued in this same transaction.
+        val merchant = when (snap) {
+            is Payment -> snap.merchant
+            is Refund -> snap.merchant
+            else -> null
+        }
+        if (merchant != null) webhooks?.queue(merchant, "$stream:$version", "$entity.$state", version, data, at)
     }
 
     fun retry(id: UUID, version: Int, attempts: Int, error: String) {

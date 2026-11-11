@@ -1,0 +1,24 @@
+{
+  "name": "@ledgerline/sdk",
+  "version": "0.6.0",
+  "description": "Ledgerline for merchants: card payments over gRPC, safe retries, live events, webhook verification.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "proto"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "proto": "node scripts/copy-proto.ts",
+    "check": "tsc --noEmit",
+    "build": "node scripts/copy-proto.ts && tsc -p tsconfig.build.json",
+    "test": "node --test \"test/*.test.ts\""
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "1.14.6",
+    "@grpc/proto-loader": "0.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3"
+  }
+}

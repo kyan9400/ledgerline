@@ -27,11 +27,11 @@ docker run -d --name "$kafka" --network "$net" --tmpfs /var/lib/kafka/data \
   -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
   -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 -e KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 \
   -e KAFKA_HEAP_OPTS="-Xmx512m -Xms512m" apache/kafka:4.4.0 >/dev/null
-docker run --rm -v ledgerline-gradle:/cache gradle:9.8.2-jdk25-alpine chown "$(id -u):$(id -g)" /cache
+docker run --rm -v ledgerline-gradle:/cache gradle:9.8.2-jdk25-noble chown "$(id -u):$(id -g)" /cache
 # (pg_isready can answer during the image's first-start initialisation, before the restart: so retry.)
 until docker exec -e PGPASSWORD=ledger "$pg" psql -q -h 127.0.0.1 -U ledger -d ledger_test -c 'CREATE DATABASE payments_test' >/dev/null 2>&1; do sleep 1; done
 docker run --rm --network "$net" -u "$(id -u):$(id -g)" -e GRADLE_USER_HOME=/cache -e HOME=/tmp \
   -v ledgerline-gradle:/cache -v "$PWD:/w" -w /w \
   -e LEDGERLINE_TEST_DB="jdbc:postgresql://$pg:5432" \
   -e LEDGERLINE_TEST_KAFKA="$kafka:9092" \
-  gradle:9.8.2-jdk25-alpine gradle --no-daemon --console=plain "$@"
+  gradle:9.8.2-jdk25-noble gradle --no-daemon --console=plain "$@"

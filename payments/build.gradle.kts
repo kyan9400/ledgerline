@@ -5,6 +5,8 @@ plugins {
 
 dependencies {
     implementation(project(":platform"))
+    implementation(project(":api"))
+    implementation("io.grpc:grpc-netty-shaded:1.85.1")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")

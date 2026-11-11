@@ -38,9 +38,10 @@ class Payments(
     outbox: Outbox,
     json: JsonMapper,
     meters: MeterRegistry,
+    webhooks: Webhooks? = null,
 ) {
-    val payments = Machine(db, outbox, json, clock, meters, "payments", "payment", PAYMENT_STEPS) { payment(it) }
-    val refunds = Machine(db, outbox, json, clock, meters, "refunds", "refund", setOf("refunding")) { refund(it) }
+    val payments = Machine(db, outbox, json, clock, meters, "payments", "payment", PAYMENT_STEPS, { payment(it) }, webhooks)
+    val refunds = Machine(db, outbox, json, clock, meters, "refunds", "refund", setOf("refunding"), { refund(it) }, webhooks)
 
     // --- intents (in the idempotency layer's transaction) --------------------------------------------
 
@@ -190,11 +191,19 @@ class Payments(
     fun payment(id: UUID): Payment = db.sql("SELECT * FROM payments WHERE id = :id").param("id", id).query { rs, _ -> paymentOf(rs) }
         .optional().orElseThrow { NotFound("payment $id") }
 
-    fun refund(id: UUID): Refund = db.sql("SELECT * FROM refunds WHERE id = :id").param("id", id).query { rs, _ -> refundOf(rs) }
+    fun refund(id: UUID): Refund = db.sql("$REFUNDS WHERE r.id = :id").param("id", id).query { rs, _ -> refundOf(rs) }
         .optional().orElseThrow { NotFound("refund $id") }
 
+    /** A merchant's payments, newest first, a page at a time: the next page starts after `after`. */
+    fun ofMerchant(account: UUID, limit: Int, after: Pair<java.time.Instant, UUID>?): List<Payment> = db.sql(
+        """SELECT * FROM payments WHERE merchant = :m
+             AND (:t::timestamptz IS NULL OR (created_at, id) < (:t::timestamptz, :id::uuid))
+           ORDER BY created_at DESC, id DESC LIMIT :n""",
+    ).param("m", account).param("t", after?.first?.let(Timestamp::from)).param("id", after?.second).param("n", limit)
+        .query { rs, _ -> paymentOf(rs) }.list()
+
     fun refundsOf(paymentId: UUID): List<Refund> = payment(paymentId).let {
-        db.sql("SELECT * FROM refunds WHERE payment_id = :id ORDER BY created_at").param("id", paymentId).query { rs, _ -> refundOf(rs) }.list()
+        db.sql("$REFUNDS WHERE r.payment_id = :id ORDER BY r.created_at").param("id", paymentId).query { rs, _ -> refundOf(rs) }.list()
     }
 
     private fun lock(id: UUID): Payment = db.sql("SELECT * FROM payments WHERE id = :id FOR UPDATE").param("id", id)
@@ -218,11 +227,14 @@ class Payments(
     )
 
     private fun refundOf(rs: ResultSet) = Refund(
-        rs.getObject("id", UUID::class.java), rs.getObject("payment_id", UUID::class.java), rs.getString("state"), rs.getLong("amount"),
+        rs.getObject("id", UUID::class.java), rs.getObject("payment_id", UUID::class.java), rs.getObject("merchant", UUID::class.java),
+        rs.getString("state"), rs.getLong("amount"),
         rs.getString("failure_reason"), rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant(),
         rs.getInt("version"), rs.getString("last_error"),
     )
 }
+
+private const val REFUNDS = "SELECT r.*, p.merchant FROM refunds r JOIN payments p ON p.id = r.payment_id"
 
 /** Applies a step's outcome, in the caller's transaction. */
 fun applyStep(machine: Machine, id: UUID, version: Int, attempts: Int, step: Step) {

@@ -33,7 +33,7 @@ class PaymentsApplication {
         @Value("\${payments.otherbank.url}") url: String,
         @Value("\${payments.otherbank.timeout}") timeout: Duration,
         json: JsonMapper,
-    ) = Banks(mapOf("otherbank" to BankClient(HttpService(url, timeout, json))))
+    ) = Banks(mapOf("otherbank" to BankClient(HttpService(url, timeout, json), HttpService(url, Duration.ofSeconds(30), json))))
 
     /** The fraud scorer (payments.fraud.url; none: off). */
     @Bean
@@ -60,7 +60,8 @@ class PaymentsApplication {
         outbox: Outbox,
         json: JsonMapper,
         meters: MeterRegistry,
-    ) = Payments(db, tx, ledger, accounts, clock, ttl, fraud, outbox, json, meters)
+        webhooks: Webhooks,
+    ) = Payments(db, tx, ledger, accounts, clock, ttl, fraud, outbox, json, meters, webhooks)
 
     @Bean
     fun payouts(
@@ -76,13 +77,32 @@ class PaymentsApplication {
     ) = Payouts(db, tx, ledger, accounts, banks.byName, clock, outbox, json, meters)
 
     @Bean
+    fun merchants(db: JdbcClient, ledger: LedgerOps) = Merchants(db, ledger)
+
+    @Bean
+    fun webhooks(db: JdbcClient, merchants: Merchants, json: JsonMapper, clock: Clock, meters: MeterRegistry) =
+        Webhooks(db, merchants, json, clock, meters)
+
+    /** The merchants' gRPC API (payments.grpc.port; 0 picks a free port, for the tests). */
+    @Bean
+    fun merchantApi(payments: Payments, writes: Writes, merchants: Merchants, json: JsonMapper, @Value("\${outbox.kafka.bootstrap-servers:}") kafka: String) =
+        MerchantApi(payments, writes, merchants, json, kafka)
+
+    @Bean
+    fun grpcServer(@Value("\${payments.grpc.port:9090}") port: Int, api: MerchantApi, merchants: Merchants) = GrpcServer(port, api, merchants)
+
+    @Bean
+    fun writes(payments: Payments, payouts: Payouts, idem: Idempotency, json: JsonMapper) = Writes(payments, payouts, idem, json)
+
+    @Bean
     fun worker(
         payments: Payments,
         payouts: Payouts,
+        webhooks: Webhooks,
         @Value("\${payments.worker.poll-ms}") pollMs: Long,
         @Value("\${payments.worker.parallelism}") parallelism: Int,
         meters: MeterRegistry,
-    ) = Worker(payments, payouts, pollMs, parallelism, meters)
+    ) = Worker(payments, payouts, webhooks, pollMs, parallelism, meters)
 
     @Bean
     fun reconcile(db: JdbcClient, tx: TransactionTemplate, ledger: LedgerOps, accounts: SystemAccounts, banks: Banks) =

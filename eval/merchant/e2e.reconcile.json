@@ -1,0 +1,1 @@
+{"ok":true,"quiet":true,"inProgress":{"payments":0,"refunds":0,"payouts":0},"violations":{"stuck":0,"event_log_not_matching_state":0,"refunds_not_summing":0,"holds_not_matching_authorised":0,"clearing_not_matching_sent":0,"settlement_not_matching_settled":0,"bank_records_not_matching":0},"totals":{"payments":397,"refunds":136,"payouts":0}}

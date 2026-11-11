@@ -3,7 +3,8 @@
 #   docker build --target payments  -t ledgerline-payments .
 #   docker build --target otherbank -t ledgerline-otherbank .
 #   docker build --target checker   -t ledgerline-checker .
-FROM gradle:9.8.2-jdk25-alpine AS build
+# Ubuntu, not Alpine: the gRPC code generator is a glibc binary.
+FROM gradle:9.8.2-jdk25-noble AS build
 WORKDIR /src
 COPY . .
 RUN --mount=type=cache,target=/home/gradle/.gradle gradle --no-daemon -q -x test \

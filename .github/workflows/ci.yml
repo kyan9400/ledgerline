@@ -59,7 +59,7 @@ jobs:
             grep -q 'tests="[1-9]' "$f" && ! grep -q '<skipped' "$f"
           }
           for t in PropertyTest ConcurrencyTest ApiTest OutboxTest; do check ledger "ledger.$t"; done
-          for t in CardPaymentsTest PayoutsTest RecoveryTest FraudCheckTest; do check payments "payments.$t"; done
+          for t in CardPaymentsTest PayoutsTest RecoveryTest FraudCheckTest MerchantApiTest; do check payments "payments.$t"; done
 
   fraud:
     runs-on: ubuntu-24.04
@@ -75,6 +75,21 @@ jobs:
       - name: Features (windows, once per payment, online equals offline)
         run: python -m unittest discover -s tests -v
 
+  sdk:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.1"
+      - run: npm ci
+      - run: npm run proto
+      - name: Type-check, then the tests (retries keep the key, the stream resumes, webhook signatures)
+        run: node_modules/.bin/tsc --noEmit && npm test
+
   images:
     runs-on: ubuntu-24.04
     steps:
@@ -84,6 +99,7 @@ jobs:
           for t in ledger payments otherbank checker; do docker build --target $t -t ledgerline-$t:ci .; done
           docker build -t ledgerline-fraud:ci fraud
           docker build -t ledgerline-dashboard:ci dashboard   # type-checks (vue-tsc) and builds the Vue app
+          docker build -f sdk/Dockerfile -t ledgerline-shop:ci .
       - name: They run as a non-root user
         run: |
           for t in ledger payments otherbank checker; do test "$(docker inspect -f '{{.Config.User}}' ledgerline-$t:ci)" = "10001:10001"; done

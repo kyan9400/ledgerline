@@ -17,6 +17,7 @@ import java.util.concurrent.Semaphore
 class Worker(
     private val payments: Payments,
     private val payouts: Payouts,
+    private val webhooks: Webhooks?,
     private val pollMs: Long,
     private val parallelism: Int,
     meters: MeterRegistry,
@@ -24,7 +25,7 @@ class Worker(
     private val log = LoggerFactory.getLogger(javaClass)
     private val executor = Executors.newVirtualThreadPerTaskExecutor()
     private val slots = Semaphore(parallelism)
-    private val driving = ConcurrentHashMap.newKeySet<UUID>()
+    private val driving = ConcurrentHashMap.newKeySet<Any>()
     private val failures = meters.counter("payments.worker.errors")
     @Volatile private var running = false
     private var thread: Thread? = null
@@ -70,10 +71,11 @@ class Worker(
         found += dispatch(payments.payments.claimDue(parallelism)) { payments.drivePayment(it) }
         found += dispatch(payments.refunds.claimDue(parallelism)) { payments.driveRefund(it) }
         found += dispatch(payouts.payouts.claimDue(parallelism)) { payouts.drive(it) }
+        if (webhooks != null) found += dispatch(webhooks.claimDue(parallelism)) { webhooks.deliver(it) }
         return found
     }
 
-    private fun dispatch(ids: List<UUID>, drive: (UUID) -> Unit): Int {
+    private fun <T : Any> dispatch(ids: List<T>, drive: (T) -> Unit): Int {
         for (id in ids) {
             if (!driving.add(id)) continue
             slots.acquire()
