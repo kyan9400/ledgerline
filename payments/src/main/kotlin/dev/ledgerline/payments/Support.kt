@@ -1,6 +1,7 @@
 package dev.ledgerline.payments
 
 import dev.ledgerline.platform.Outbox
+import dev.ledgerline.platform.Traces
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.transaction.support.TransactionTemplate
@@ -101,6 +102,9 @@ class Idempotency(private val db: JdbcClient, private val json: JsonMapper, priv
     private fun sha256(s: String) = MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
 }
 
+/** A row due for its next step, and the trace its last change was made in. */
+data class Due<K : Any>(val id: K, val trace: String?)
+
 /** What one attempt at a step came to. */
 sealed interface Step {
     /** Move to the next state, setting these columns too. */
@@ -134,7 +138,11 @@ class Machine(
     private val steps: Set<String>,
     private val snapshot: (UUID) -> Any,
     private val webhooks: Webhooks? = null,
+    private val traces: Traces = Traces.NONE,
 ) {
+    /** The current trace, for a new row's trace_context. */
+    fun trace(): String? = traces.current()
+
     /** In the caller's transaction. A step state is picked up by the worker at once, or after the lease. */
     fun change(id: UUID, fromVersion: Int, to: String, set: Map<String, Any?> = emptyMap(), lease: Boolean = false): Boolean {
         val now = clock.instant()
@@ -142,9 +150,9 @@ class Machine(
         val extra = set.keys.joinToString("") { ", $it = :$it" }
         val sql = db.sql(
             """UPDATE $table SET state = :to, version = version + 1, attempts = 0, last_error = NULL,
-                 next_attempt_at = :next, updated_at = :now$extra
+                 next_attempt_at = :next, updated_at = :now, trace_context = coalesce(:tc::text, trace_context)$extra
                WHERE id = :id AND version = :v""",
-        ).param("to", to).param("next", next?.let(Timestamp::from)).param("now", Timestamp.from(now))
+        ).param("to", to).param("tc", traces.current()).param("next", next?.let(Timestamp::from)).param("now", Timestamp.from(now))
             .param("id", id).param("v", fromVersion)
         set.forEach { (k, v) -> sql.param(k, if (v is java.time.Instant) Timestamp.from(v) else v) }
         if (sql.update() == 0) return false
@@ -193,13 +201,13 @@ class Machine(
         meters.counter("payments.stuck", "entity", entity).increment()
     }
 
-    /** Due rows, each leased to this worker so another doesn't take it meanwhile. */
-    fun claimDue(limit: Int): List<UUID> = db.sql(
+    /** Due rows, each leased to this worker so another doesn't take it meanwhile; with their traces. */
+    fun claimDue(limit: Int): List<Due<UUID>> = db.sql(
         """UPDATE $table SET next_attempt_at = :lease WHERE id IN (
              SELECT id FROM $table WHERE next_attempt_at <= :now ORDER BY next_attempt_at LIMIT :n FOR UPDATE SKIP LOCKED)
-           RETURNING id""",
+           RETURNING id, trace_context""",
     ).param("lease", Timestamp.from(clock.instant().plus(LEASE))).param("now", Timestamp.from(clock.instant())).param("n", limit)
-        .query(UUID::class.java).list().filterNotNull()
+        .query { rs, _ -> Due(rs.getObject(1, UUID::class.java), rs.getString(2)) }.list()
 
     companion object {
         /** Longer than any one step can take (each call has a timeout of a few seconds). */

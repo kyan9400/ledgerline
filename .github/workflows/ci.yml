@@ -59,7 +59,7 @@ jobs:
             grep -q 'tests="[1-9]' "$f" && ! grep -q '<skipped' "$f"
           }
           for t in PropertyTest ConcurrencyTest ApiTest OutboxTest; do check ledger "ledger.$t"; done
-          for t in CardPaymentsTest PayoutsTest RecoveryTest FraudCheckTest MerchantApiTest; do check payments "payments.$t"; done
+          for t in CardPaymentsTest PayoutsTest RecoveryTest FraudCheckTest MerchantApiTest TracingTest; do check payments "payments.$t"; done
 
   fraud:
     runs-on: ubuntu-24.04
@@ -89,6 +89,19 @@ jobs:
       - run: npm run proto
       - name: Type-check, then the tests (retries keep the key, the stream resumes, webhook signatures)
         run: node_modules/.bin/tsc --noEmit && npm test
+
+  observability:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: The alert rules' unit tests (they fire when they should, and only then)
+        run: docker run --rm -v "$PWD/deploy/observability:/o" -w /o --entrypoint promtool prom/prometheus:v3.15.1 test rules alerts.test.yaml
+      - name: Prometheus's and Alertmanager's configs are valid
+        run: |
+          docker run --rm -v "$PWD/deploy/observability:/o" -w /o --entrypoint promtool prom/prometheus:v3.15.1 check config --syntax-only prometheus.yaml
+          docker run --rm -v "$PWD/deploy/observability:/o" --entrypoint amtool prom/alertmanager:v0.34.1 check-config /o/alertmanager.yaml
+      - name: The dashboards are what dashboards.py makes
+        run: python3 deploy/observability/grafana/dashboards.py && git diff --exit-code deploy/observability/grafana/dashboards
 
   images:
     runs-on: ubuntu-24.04

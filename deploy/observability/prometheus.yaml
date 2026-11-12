@@ -1,0 +1,40 @@
+# Prometheus: scrapes the services every 15 s, evaluates the alert rules (alerts.yaml), sends what fires
+# to Alertmanager. Tempo writes the service graph's series in (remote write).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files: [/etc/prometheus/alerts.yaml]
+
+alerting:
+  alertmanagers:
+    - static_configs: [{ targets: ["alertmanager:9093"] }]
+
+scrape_configs:
+  - job_name: ledger
+    metrics_path: /actuator/prometheus
+    static_configs: [{ targets: ["ledger:8080"] }]
+  - job_name: payments
+    metrics_path: /actuator/prometheus
+    static_configs: [{ targets: ["payments:8080"] }]
+  - job_name: fraud
+    static_configs: [{ targets: ["fraud:8000"] }]
+  - job_name: clickhouse
+    static_configs: [{ targets: ["clickhouse:9363"] }]
+    metric_relabel_configs:
+      # ClickHouse exports some thousand series; keep the few the dashboards use.
+      - source_labels: [__name__]
+        regex: "ClickHouseProfileEvents_(Query|FailedQuery|InsertedRows|KafkaMessagesRead|KafkaRowsRead|KafkaRebalanceErrors|KafkaConsumerErrors)|ClickHouseMetrics_(KafkaConsumers|KafkaConsumersWithAssignment|Query|MemoryTracking)|ClickHouseAsyncMetrics_Uptime"
+        action: keep
+  - job_name: tempo
+    static_configs: [{ targets: ["tempo:3200"] }]
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "tempo_(distributor_spans_received_total|discarded_spans_total|ingester_live_traces)"
+        action: keep
+  - job_name: prometheus
+    static_configs: [{ targets: ["localhost:9090"] }]
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "prometheus_(tsdb_head_series|rule_evaluation_failures_total|notifications_dropped_total|tsdb_storage_blocks_bytes)"
+        action: keep

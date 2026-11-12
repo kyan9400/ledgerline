@@ -53,6 +53,8 @@ object World {
 
     fun dbUrl() = "$db/payments_test"
 
+    fun ledgerDbUrl() = "$db/ledger_test"
+
     fun user() = user
 
     fun password() = password
@@ -91,11 +93,19 @@ abstract class PaymentsTest {
 
     data class Reply(val status: Int, val body: JsonNode, val raw: String, val replayed: Boolean)
 
-    fun call(method: String, path: String, body: Any? = null, key: String? = UUID.randomUUID().toString(), base: String? = null): Reply {
+    fun call(
+        method: String,
+        path: String,
+        body: Any? = null,
+        key: String? = UUID.randomUUID().toString(),
+        base: String? = null,
+        headers: Map<String, String> = emptyMap(),
+    ): Reply {
         val req = HttpRequest.newBuilder(URI("${base ?: "http://127.0.0.1:$port"}$path"))
             .timeout(Duration.ofSeconds(30))
             .header("Content-Type", "application/json")
             .apply { if (key != null) header("Idempotency-Key", key) }
+            .apply { headers.forEach { (k, v) -> header(k, v) } }
             .method(method, if (body == null) HttpRequest.BodyPublishers.noBody() else HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body)))
             .build()
         val res = http.send(req, HttpResponse.BodyHandlers.ofString())

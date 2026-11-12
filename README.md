@@ -6,7 +6,7 @@ it as state machines and sagas, and every change reaches Kafka through a transac
 written in Kotlin and Spring Boot on PostgreSQL and Kafka. Each property it promises is checked by tests
 that try hard to break it.
 
-> Work in progress: stages 1 to 6 of 8 are done (see [the plan](#roadmap)). All accounts and money in
+> Work in progress: stages 1 to 7 of 8 are done (see [the plan](#roadmap)). All accounts and money in
 > it are made up.
 
 ```
@@ -334,6 +334,106 @@ through the SDK for a minute.
   refused during the outage. All 1,085 also came through the live stream.
 - **The books held:** the reconciliation and the analytics check passed.
 
+## Observability
+
+Every service is traced (OpenTelemetry) and scraped (Prometheus); Grafana shows both, and alerts go
+through Alertmanager. All of it is in [`deploy/observability`](deploy/observability) and starts with
+the rest of the stack.
+
+**A payment's trace follows the payment, not the call stack.** Much of what happens to a payment
+happens later, elsewhere: the outbox relay sends its events to Kafka, the worker drives a step the
+request couldn't finish (or one left when the service was killed), a webhook goes out after retries.
+So each row that is acted on later (the outbox, payments, refunds, payouts, webhook deliveries) keeps
+the W3C `traceparent` of the change that wrote it ([`Traces.kt`](platform/src/main/kotlin/dev/ledgerline/platform/Traces.kt)),
+and whoever picks the row up continues that trace. A payout, as Tempo has it
+([`scripts/trace.py`](scripts/trace.py) prints any trace like this):
+
+```
+trace 8aee4945…: 27 spans over 2.348 s
+  payments: http post /v1/payouts                     +0 ms    51 ms  (status=202)
+    payments: HTTP POST (ledger)                     +18 ms    22 ms
+      ledger: http post /v1/transfers                +21 ms    20 ms
+        ledger: send ledger.events  ×3               +94 ms           (outbox wait 69 ms)
+    payments: send payments.events  ×2               +64 ms
+    payments: payout step                            +82 ms     9 ms   the worker, continuing the trace
+      payments: HTTP POST (otherbank)                +83 ms     4 ms   (status=202)
+      payments: payout step  ×4                     +186 ms …           asking the bank until it settles
+        …
+        payments: payout step                      +2272 ms    37 ms
+          payments: HTTP POST (ledger)             +2276 ms    18 ms
+            ledger: http post /v1/transfers        +2279 ms    15 ms
+              ledger: send ledger.events  ×3       +2344 ms
+```
+
+- **Sampled once, followed everywhere.** 10% of requests are traced (`TRACING_SAMPLING`), and every
+  service (the Python fraud scorer included) follows the first one's decision, so a trace is whole or
+  absent, never partial. A Kafka message carries its `send` span's `traceparent` header.
+- **Proven by a test**, not by looking at Grafana: [`TracingTest`](payments/src/test/kotlin/dev/ledgerline/payments/TracingTest.kt)
+  sends a request in a given trace and finds that trace in the payment's row, in both its events' Kafka
+  headers, and in the ledger's outbox (over HTTP, in another service).
+- **From a metric to a trace.** The latency histograms carry the trace id of a sampled request
+  (exemplars): a slow dot on the latency chart opens its trace. Tempo also draws the service graph from
+  the spans.
+
+**Two dashboards**, provisioned from [`dashboards.py`](deploy/observability/grafana/dashboards.py) (CI
+checks the JSON is what it makes): the overview (SLOs, what is firing, traffic, latency, errors, the
+service map, the dependencies as payments sees them), and payments (state changes, the work waiting,
+the outbox's lag, webhooks, fraud, the ledger's audit, JVMs and connection pools).
+
+![The overview dashboard](docs/screenshots/grafana-overview.png)
+
+**Alerts on symptoms, and on what the symptoms can't show** ([`alerts.yaml`](deploy/observability/alerts.yaml),
+a runbook for each in [`docs/runbooks.md`](docs/runbooks.md)):
+
+- **SLOs, paged by burn rate.** 99.5% of API requests (HTTP and gRPC) without a server error, 99% within
+  1 s. They page when the error budget burns at 14.4x the sustainable rate over both an hour and the
+  last 5 minutes (a ticket at 6x over 6 hours and 30 minutes), as in Google's SRE workbook. So they
+  page on how much a fault costs, not on every fault.
+- **What the request metrics can't see.** A payment held up by a ledger that is down still gets its
+  answer (202: the worker will finish it), so the work waiting is measured
+  (`payments.backlog.oldest`), and pages after a minute over 60 s. The ledger audits its own books every
+  10 minutes; any problem pages at once. Plus a database out of reach, events late to Kafka, the fraud
+  scorer failing open, webhooks failing, load shedding.
+- **Unit tested.** [`alerts.test.yaml`](deploy/observability/alerts.test.yaml): `promtool` feeds each
+  rule made-up series and checks it fires when it should, and not before (in CI).
+
+**Do they fire? Measured** ([`chaos/alerts.sh`](chaos/alerts.sh), [`eval/alerts`](eval/alerts)): under
+steady load (the checker's workload and the example shop over gRPC), each scenario breaks one thing.
+The run starts with eight minutes where nothing breaks, in which no alert may fire.
+
+| Broken | For | Paged or ticketed (after the fault began) | Cleared (after it ended) |
+| --- | --- | --- | --- |
+| nothing (baseline) | 8 min | none | |
+| the ledger, stopped | 3 min | ServiceDown 89 s, PaymentsNotFinishing 139 s | 16 s, 136 s |
+| Kafka, stopped | 3 min | OutboxLagging 101 s | 20 s |
+| the fraud scorer, stopped | 4 min | ServiceDown 87 s, FraudScorerFailingOpen 157 s | 15 s, 285 s (it rebuilds from Kafka) |
+| PostgreSQL, stopped | 2 min | DatabaseUnreachable 49 s; then the error and latency budgets' pages | 8 s |
+| the ledger, 1.5 s slow | 15 min | ApiLatencyBudgetBurn 504 s, DependencySlow 754 s | 233 s, 163 s |
+| the shop's webhook endpoint, refusing | 7 min | WebhooksFailing 328 s | 228 s |
+| an account's balance, changed in the database | 43 s | LedgerBooksWrong 45 s | 82 s (once put back) |
+
+Every fault was caught by the alert meant for it, and nothing fired that the fault doesn't explain
+(load shedding while requests wait on a slow dependency; the SLO pages when the database goes, which
+Alertmanager holds back while DatabaseUnreachable fires). [`results.md`](eval/alerts/results.md) has all
+of it, and `timeline.log` every alert's state every 10 s.
+
+The first runs of this found what they were for ([`eval/alerts/first-run`](eval/alerts/first-run)):
+
+- **A metric that lied.** With Kafka down, `outbox.lag.seconds` stayed at 0: the relay retried creating
+  its topics, and closing Kafka's admin client waited a minute for its calls each time, so it never got
+  as far as measuring. Fixed (bounded timeouts, the lag measured on every failure), with a test.
+- **An outage nothing paged for.** PostgreSQL down for 2 minutes: every write failed, but the services
+  answered their scrapes, and 2 minutes spend too little of a month's budget to page by burn rate. Each
+  service now probes its database every 5 s (`ledgerline.database.up`), and that pages.
+- **A slowdown the SLO forgave.** A ledger 1.5 s slow for 25 minutes made 38% of requests slow, but fewer
+  requests came in meanwhile (clients waited, the service shed load), so over the hour only 7.8% were
+  slow: under the 14.4% that pages. By the SLO's arithmetic that is right; a dependency slow for 10
+  minutes now makes a ticket (`DependencySlow`, on the median, as the simulated bank is slow 5% of the
+  time on purpose). In the final run, with less traffic, the latency page fired too.
+- **A disk filling** while it ran: PostgreSQL's WAL (up to 1 GB by default) and, at ~600,000 rows,
+  ClickHouse keeping each merge's outdated parts for 8 minutes (1 GB of them, for 100 MB of data). Both
+  are capped now, and the evaluation stops itself when the disk runs low.
+
 ## Tested to break
 
 The tests run against a real PostgreSQL and Kafka. The payments tests run a real ledger and the
@@ -563,6 +663,11 @@ A merchant, end to end: `chaos/merchant.sh` (it builds on the `ledgerline-shop` 
 sdk/Dockerfile -t ledgerline-shop .`). A merchant of your own: `POST /internal/merchants {name, webhookUrl}`
 on the payments service gives its API key and webhook secret, once.
 
+Grafana listens on the host's loopback too (port 18300): `ssh -L 18300:127.0.0.1:18300 <host>`, then
+`http://localhost:18300` (anyone may look; admin's password is `GRAFANA_ADMIN_PASSWORD`). The alert
+evaluation: `chaos/alerts.sh` (all scenarios, about 80 minutes) or `chaos/alerts.sh kafka-down` (one).
+Any trace, as text: `scripts/trace.py <trace id>`, or `--search '{ name = "payment step" }'`.
+
 The tests, with a throwaway PostgreSQL and Kafka in Docker:
 
 ```bash
@@ -585,11 +690,14 @@ Or with your own: `LEDGERLINE_TEST_DB=jdbc:postgresql://host:5432 LEDGERLINE_TES
 | [`proto`](proto/ledgerline/v1/merchants.proto), [`api`](api) | the merchants' gRPC API: its contract, and the Java code generated from it |
 | [`sdk`](sdk) | TypeScript: the merchants' SDK, its tests, and an example shop |
 | [`deploy/clickhouse`](deploy/clickhouse) | the analytics schema (Kafka engine, materialized views) and the dashboard's endpoints |
+| [`deploy/observability`](deploy/observability) | Tempo, Prometheus, Alertmanager and Grafana: the alerts and their unit tests, the dashboards (made by `dashboards.py`) |
+| [`docs/runbooks.md`](docs/runbooks.md) | what to do when each alert fires |
 
 The stack is Kotlin 2.3, Spring Boot 4.1 (Spring MVC on virtual threads, JdbcClient, Flyway), Java 25,
 PostgreSQL 18 and Kafka 4.4 (KRaft, one broker); the fraud scorer is Python 3.13 (FastAPI, LightGBM,
 confluent-kafka); analytics is ClickHouse 26.8 and a Vue 3.5 dashboard (TypeScript, Chart.js); merchants use gRPC (grpc-java 1.85,
-protobuf 4.36) and a TypeScript SDK (Node 24, grpc-js).
+protobuf 4.36) and a TypeScript SDK (Node 24, grpc-js); observability is OpenTelemetry (through Micrometer), Tempo 2.10,
+Prometheus 3.15, Alertmanager 0.34 and Grafana 13.
 
 ## Roadmap
 
@@ -601,5 +709,5 @@ protobuf 4.36) and a TypeScript SDK (Node 24, grpc-js).
 | 4. Fraud | done: a simulator with known fraud, real-time features from Kafka, a model scored against the truth, in-line and failing open |
 | 5. Analytics | done: ClickHouse fed from Kafka, proven to agree with the ledger; a Vue 3 dashboard |
 | 6. Merchants | done: a gRPC API, signed webhooks, a TypeScript SDK, proven end to end while things break |
-| 7. Production | OpenTelemetry tracing, Grafana, alerts |
+| 7. Production | done: traces that follow a payment through the outbox, the worker and webhooks; Grafana; SLO and cause alerts, each proven to fire by breaking what it watches |
 | 8. Publishing | Demo, write-up |

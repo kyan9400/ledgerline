@@ -15,6 +15,8 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("tools.jackson.module:jackson-module-kotlin")
     implementation("io.micrometer:micrometer-registry-prometheus")
+    implementation("org.springframework.boot:spring-boot-starter-opentelemetry")
+    implementation("io.micrometer:micrometer-java11")
     runtimeOnly("org.postgresql:postgresql")
 
     // The tests run a real ledger and a simulated other bank in the same JVM.

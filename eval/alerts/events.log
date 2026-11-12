@@ -1,0 +1,26 @@
+1794410529 start baseline
+1794411009 end baseline
+1794411010 quiet after baseline
+1794411070 start ledger-down
+1794411253 end ledger-down
+1794411627 quiet after ledger-down
+1794411688 start kafka-down
+1794411869 end kafka-down
+1794411902 quiet after kafka-down
+1794411962 start fraud-down
+1794412204 end fraud-down
+1794412499 quiet after fraud-down
+1794412499 stopped: only   400 MB of disk left
+1794414978 start webhooks-down
+1794415398 end webhooks-down
+1794415631 quiet after webhooks-down
+1794415631 start books-wrong
+1794415674 end books-wrong
+1794415769 quiet after books-wrong
+1794447908 start postgres-down
+1794448029 end postgres-down
+1794448973 still active after 15 minutes: "alertname":"ApiErrorBudgetBurnSlow" 
+1794448973 quiet after postgres-down
+1794449034 start slow-ledger
+1794449935 end slow-ledger
+1794450176 quiet after slow-ledger

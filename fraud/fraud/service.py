@@ -13,7 +13,11 @@ before it moves a card payment's money.
 - **The model** is `model.txt` with `model.json` beside it (feature names, threshold), from train.py.
   Without one, the rules in features.py decide.
 
-Environment: KAFKA (bootstrap servers), TOPIC=payments.events, MODEL_DIR=/model, THRESHOLD (overrides).
+- **Traced.** A score is a span in the payment's trace (from the request's `traceparent`), with the
+  score, the decision and the model; it is sampled exactly when the payments service sampled the payment.
+
+Environment: KAFKA (bootstrap servers), TOPIC=payments.events, MODEL_DIR=/model, THRESHOLD (overrides),
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT (where spans go; none: not sent).
 """
 
 from __future__ import annotations
@@ -28,7 +32,14 @@ from pathlib import Path
 import lightgbm as lgb
 import numpy as np
 from confluent_kafka import Consumer, TopicPartition
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
+from opentelemetry import propagate, trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import ALWAYS_OFF, ParentBased
+from opentelemetry.trace import SpanKind, Status, StatusCode
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from pydantic import BaseModel
 
@@ -42,6 +53,21 @@ DECISIONS = Counter("fraud_decisions_total", "decisions", ["decision"])
 EVENTS = Counter("fraud_events_applied_total", "payment events applied")
 READY = Gauge("fraud_ready", "caught up with the topic")
 SCORE_TIME = Histogram("fraud_score_seconds", "time to score", buckets=[0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05])
+
+
+def tracer() -> trace.Tracer:
+    """Spans only within a caller's trace, sampled as the caller decided (no traces of its own)."""
+    provider = TracerProvider(
+        resource=Resource.create({"service.name": "fraud", "service.namespace": "ledgerline"}),
+        sampler=ParentBased(ALWAYS_OFF),
+    )
+    if os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"):
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+    trace.set_tracer_provider(provider)
+    return trace.get_tracer("fraud")
+
+
+TRACER = tracer()
 
 
 class Model:
@@ -127,7 +153,21 @@ class Attempt(BaseModel):
 
 
 @app.post("/v1/score")
-def score(a: Attempt, response: Response):
+def score(a: Attempt, request: Request, response: Response):
+    with TRACER.start_as_current_span(
+        "POST /v1/score", context=propagate.extract(request.headers), kind=SpanKind.SERVER,
+        attributes={"http.request.method": "POST", "http.route": "/v1/score", "ledgerline.payment": a.payment},
+    ) as span:
+        result = scored(a, response)
+        span.set_attribute("http.response.status_code", response.status_code or 200)
+        if response.status_code == 503:
+            span.set_status(Status(StatusCode.ERROR, "not ready"))
+        else:
+            span.set_attributes({"fraud.score": result["score"], "fraud.decision": result["decision"], "fraud.model": result["model"]})
+        return result
+
+
+def scored(a: Attempt, response: Response) -> dict:
     if not ready.is_set():
         response.status_code = 503
         return {"code": "not_ready", "detail": "still rebuilding the features from Kafka"}

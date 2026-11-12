@@ -1,6 +1,8 @@
 package dev.ledgerline.payments
 
+import dev.ledgerline.platform.Traces
 import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.tracing.Span
 import org.slf4j.LoggerFactory
 import org.springframework.context.SmartLifecycle
 import java.util.UUID
@@ -13,6 +15,9 @@ import java.util.concurrent.Semaphore
  * of a payout, a hold that has expired. Each due row is leased first (Machine.claimDue), so several
  * instances of the service share the work without taking the same row; a lease that runs out (the
  * instance died) makes the row due again.
+ *
+ * Each step runs in a span continuing the trace of the row's last change: a payment the worker finishes
+ * after a crash shows in the trace of the request that started it.
  */
 class Worker(
     private val payments: Payments,
@@ -21,6 +26,7 @@ class Worker(
     private val pollMs: Long,
     private val parallelism: Int,
     meters: MeterRegistry,
+    private val traces: Traces = Traces.NONE,
 ) : SmartLifecycle {
     private val log = LoggerFactory.getLogger(javaClass)
     private val executor = Executors.newVirtualThreadPerTaskExecutor()
@@ -68,20 +74,20 @@ class Worker(
     fun round(): Int {
         payments.expire(parallelism)
         var found = 0
-        found += dispatch(payments.payments.claimDue(parallelism)) { payments.drivePayment(it) }
-        found += dispatch(payments.refunds.claimDue(parallelism)) { payments.driveRefund(it) }
-        found += dispatch(payouts.payouts.claimDue(parallelism)) { payouts.drive(it) }
-        if (webhooks != null) found += dispatch(webhooks.claimDue(parallelism)) { webhooks.deliver(it) }
+        found += dispatch("payment step", null, payments.payments.claimDue(parallelism)) { payments.drivePayment(it) }
+        found += dispatch("refund step", null, payments.refunds.claimDue(parallelism)) { payments.driveRefund(it) }
+        found += dispatch("payout step", null, payouts.payouts.claimDue(parallelism)) { payouts.drive(it) }
+        if (webhooks != null) found += dispatch("webhook delivery", Span.Kind.CLIENT, webhooks.claimDue(parallelism)) { webhooks.deliver(it) }
         return found
     }
 
-    private fun <T : Any> dispatch(ids: List<T>, drive: (T) -> Unit): Int {
-        for (id in ids) {
+    private fun <K : Any> dispatch(what: String, kind: Span.Kind?, due: List<Due<K>>, drive: (K) -> Unit): Int {
+        for ((id, trace) in due) {
             if (!driving.add(id)) continue
             slots.acquire()
             executor.execute {
                 try {
-                    drive(id)
+                    traces.within(trace, what, kind, mapOf("ledgerline.id" to id.toString())) { drive(id) }
                 } catch (e: Exception) {
                     // A step that threw (the ledger was unreachable while opening a system account, say)
                     // stays leased, and is due again when the lease runs out.
@@ -93,6 +99,6 @@ class Worker(
                 }
             }
         }
-        return ids.size
+        return due.size
     }
 }

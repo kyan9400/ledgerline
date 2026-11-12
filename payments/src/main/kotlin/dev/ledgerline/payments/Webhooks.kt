@@ -1,5 +1,6 @@
 package dev.ledgerline.payments
 
+import dev.ledgerline.platform.Traces
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.jdbc.core.simple.JdbcClient
 import tools.jackson.databind.json.JsonMapper
@@ -33,6 +34,7 @@ class Webhooks(
     private val json: JsonMapper,
     private val clock: Clock,
     meters: MeterRegistry,
+    private val traces: Traces = Traces.NONE,
 ) {
     private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()
     private val delivered = meters.counter("payments.webhooks.delivered")
@@ -51,18 +53,18 @@ class Webhooks(
             append(",\"data\":").append(dataJson).append('}')
         }
         db.sql(
-            """INSERT INTO webhook_deliveries (merchant_id, event_id, type, payload, next_attempt_at)
-               VALUES (:m, :e, :t, :p, :now) ON CONFLICT (merchant_id, event_id) DO NOTHING""",
-        ).param("m", m.id).param("e", eventId).param("t", type).param("p", payload).param("now", Timestamp.from(clock.instant())).update()
+            """INSERT INTO webhook_deliveries (merchant_id, event_id, type, payload, next_attempt_at, trace_context)
+               VALUES (:m, :e, :t, :p, :now, :tc) ON CONFLICT (merchant_id, event_id) DO NOTHING""",
+        ).param("m", m.id).param("tc", traces.current()).param("e", eventId).param("t", type).param("p", payload).param("now", Timestamp.from(clock.instant())).update()
     }
 
     /** Due deliveries, leased for a minute (longer than a delivery can take). */
-    fun claimDue(limit: Int): List<Long> = db.sql(
+    fun claimDue(limit: Int): List<Due<Long>> = db.sql(
         """UPDATE webhook_deliveries SET next_attempt_at = :lease WHERE id IN (
              SELECT id FROM webhook_deliveries WHERE next_attempt_at <= :now ORDER BY next_attempt_at LIMIT :n FOR UPDATE SKIP LOCKED)
-           RETURNING id""",
+           RETURNING id, trace_context""",
     ).param("lease", Timestamp.from(clock.instant().plusSeconds(60))).param("now", Timestamp.from(clock.instant())).param("n", limit)
-        .query(Long::class.java).list().filterNotNull()
+        .query { rs, _ -> Due(rs.getLong(1), rs.getString(2)) }.list()
 
     fun deliver(id: Long) {
         val d = db.sql("SELECT merchant_id, event_id, payload, attempts FROM webhook_deliveries WHERE id = :id AND state = 'pending'")
@@ -72,6 +74,8 @@ class Webhooks(
         // null: the merchant took it.
         val error = if (m.webhookUrl == null) "no webhook URL" else send(m.webhookUrl, m.webhookSecret, id, d)
         val attempts = d.attempts + 1
+        traces.tag("ledgerline.webhook.attempt", attempts.toString())
+        traces.tag("ledgerline.webhook.outcome", error ?: "delivered")
         when {
             error == null -> {
                 db.sql("UPDATE webhook_deliveries SET state = 'delivered', attempts = :a, delivered_at = now(), next_attempt_at = NULL, last_error = NULL WHERE id = :id")

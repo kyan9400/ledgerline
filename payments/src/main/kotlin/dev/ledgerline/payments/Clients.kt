@@ -32,9 +32,17 @@ interface LedgerClient {
     fun get(path: String): Outcome
 }
 
-/** Calls over HTTP with a timeout; a slow ledger is treated as an unavailable one. */
-class HttpService(private val base: String, private val timeout: Duration, private val json: JsonMapper) : LedgerClient {
-    private val http = HttpClient.newBuilder().connectTimeout(timeout).build()
+/**
+ * Calls over HTTP with a timeout; a slow ledger is treated as an unavailable one. [instrument] wraps the
+ * client (with [Instrumentation.http]: a span per call, its traceparent sent along, http.client.requests).
+ */
+class HttpService(
+    private val base: String,
+    private val timeout: Duration,
+    private val json: JsonMapper,
+    instrument: (HttpClient) -> HttpClient = { it },
+) : LedgerClient {
+    private val http = instrument(HttpClient.newBuilder().connectTimeout(timeout).build())
 
     override fun post(path: String, idempotencyKey: String, body: Any): Outcome = send(
         HttpRequest.newBuilder(URI("$base$path")).timeout(timeout)

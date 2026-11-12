@@ -1,0 +1,863 @@
+{
+ "uid": "overview",
+ "title": "Ledgerline: overview",
+ "description": "Are the APIs working, fast, and the dependencies answering? SLOs: 99.5% of requests without a server error, 99% within 1 s.",
+ "tags": [
+  "ledgerline"
+ ],
+ "schemaVersion": 41,
+ "version": 1,
+ "editable": false,
+ "graphTooltip": 1,
+ "refresh": "30s",
+ "time": {
+  "from": "now-1h",
+  "to": "now"
+ },
+ "timezone": "utc",
+ "panels": [
+  {
+   "type": "row",
+   "title": "SLOs (the alerts page on the error budget's burn rate)",
+   "collapsed": false,
+   "id": 1,
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "type": "stat",
+   "title": "API requests",
+   "description": "the ledger's and payments' /v1, and the merchants' gRPC API; 5-minute rate",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "ledgerline:api_requests:rate5m",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "area",
+    "textMode": "value"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "id": 2
+  },
+  {
+   "type": "stat",
+   "title": "Failing (5 min)",
+   "description": "server errors among requests; the SLO allows 0.5%, a page at 14.4x that",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "ledgerline:api_error_ratio:5m",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 0.005,
+        "color": "orange"
+       },
+       {
+        "value": 0.072,
+        "color": "red"
+       }
+      ]
+     },
+     "decimals": 2
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "area",
+    "textMode": "value"
+   },
+   "gridPos": {
+    "x": 4,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "id": 3
+  },
+  {
+   "type": "stat",
+   "title": "Over 1 s (5 min)",
+   "description": "requests slower than 1 s; the SLO allows 1%",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "ledgerline:api_slow_ratio:5m",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 0.01,
+        "color": "orange"
+       },
+       {
+        "value": 0.144,
+        "color": "red"
+       }
+      ]
+     },
+     "decimals": 2
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "area",
+    "textMode": "value"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "id": 4
+  },
+  {
+   "type": "stat",
+   "title": "Failing (1 h)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "ledgerline:api_error_ratio:1h",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 0.005,
+        "color": "orange"
+       },
+       {
+        "value": 0.072,
+        "color": "red"
+       }
+      ]
+     },
+     "decimals": 3
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "area",
+    "textMode": "value"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "id": 5
+  },
+  {
+   "type": "stat",
+   "title": "Alerts firing",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "count(ALERTS{alertstate=\"firing\"}) or vector(0)",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 1,
+        "color": "red"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "area",
+    "textMode": "value"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "id": 6
+  },
+  {
+   "type": "stat",
+   "title": "Ledger audit: problems",
+   "description": "what the last audit of the books found wrong (it runs every 10 minutes)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(ledger_audit_violations)",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 1,
+        "color": "red"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "area",
+    "textMode": "value"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "id": 7
+  },
+  {
+   "type": "table",
+   "title": "Firing and pending alerts",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "ALERTS",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "exemplar": false,
+     "instant": true,
+     "range": false,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Value": true,
+       "__name__": true,
+       "instance": true
+      },
+      "indexByName": {
+       "alertname": 0,
+       "alertstate": 1,
+       "severity": 2
+      }
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "showHeader": true
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 5,
+    "w": 24,
+    "h": 5
+   },
+   "id": 8
+  },
+  {
+   "type": "row",
+   "title": "Traffic, latency, errors",
+   "collapsed": false,
+   "id": 9,
+   "gridPos": {
+    "x": 0,
+    "y": 10,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "type": "timeseries",
+   "title": "Requests per second",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (job) (rate(http_server_requests_seconds_count{uri=~\"/v1/.*\"}[1m]))",
+     "legendFormat": "{{job}} HTTP",
+     "refId": "A",
+     "exemplar": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (job) (rate(grpc_server_seconds_count[1m]))",
+     "legendFormat": "{{job}} gRPC",
+     "refId": "B",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 25,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "normal"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 11,
+    "w": 8,
+    "h": 8
+   },
+   "id": 10
+  },
+  {
+   "type": "timeseries",
+   "title": "Latency p99 (dots: sampled requests, click for the trace)",
+   "description": "the dashed line is the SLO's 1 s",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le, job) (rate(http_server_requests_seconds_bucket{uri=~\"/v1/.*\"}[5m])))",
+     "legendFormat": "{{job}} HTTP p99",
+     "refId": "A",
+     "exemplar": true
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le, job) (rate(grpc_server_seconds_bucket[5m])))",
+     "legendFormat": "{{job}} gRPC p99",
+     "refId": "B",
+     "exemplar": true
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.5, sum by (le, job) (rate(http_server_requests_seconds_bucket{uri=~\"/v1/.*\"}[5m])))",
+     "legendFormat": "{{job}} HTTP p50",
+     "refId": "C",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "dashed"
+      }
+     },
+     "min": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "transparent"
+       },
+       {
+        "value": 1,
+        "color": "red"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 11,
+    "w": 8,
+    "h": 8
+   },
+   "id": 11
+  },
+  {
+   "type": "timeseries",
+   "title": "Server errors per second",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (job, status) (rate(http_server_requests_seconds_count{uri=~\"/v1/.*\", status=~\"5..\"}[1m]))",
+     "legendFormat": "{{job}} HTTP {{status}}",
+     "refId": "A",
+     "exemplar": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (job, grpc_status_code) (rate(grpc_server_seconds_count{grpc_status_code=~\"UNAVAILABLE|INTERNAL|UNKNOWN|DEADLINE_EXCEEDED\"}[1m]))",
+     "legendFormat": "{{job}} gRPC {{grpc_status_code}}",
+     "refId": "B",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 25,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "normal"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 11,
+    "w": 8,
+    "h": 8
+   },
+   "id": 12
+  },
+  {
+   "type": "row",
+   "title": "Who calls whom (from the traces)",
+   "collapsed": false,
+   "id": 13,
+   "gridPos": {
+    "x": 0,
+    "y": 19,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "type": "nodeGraph",
+   "title": "Service map",
+   "datasource": {
+    "type": "tempo",
+    "uid": "tempo"
+   },
+   "description": "Tempo's service graph: each edge is calls a second, how slow and how often failing (sampled traces).",
+   "targets": [
+    {
+     "datasource": {
+      "type": "tempo",
+      "uid": "tempo"
+     },
+     "queryType": "serviceMap",
+     "refId": "A"
+    }
+   ],
+   "options": {},
+   "gridPos": {
+    "x": 0,
+    "y": 20,
+    "w": 12,
+    "h": 12
+   },
+   "id": 14
+  },
+  {
+   "type": "timeseries",
+   "title": "Dependencies: p99 as payments sees them",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le, peer_service) (rate(http_client_requests_seconds_bucket[5m])))",
+     "legendFormat": "{{peer_service}}",
+     "refId": "A",
+     "exemplar": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 20,
+    "w": 12,
+    "h": 6
+   },
+   "id": 15
+  },
+  {
+   "type": "timeseries",
+   "title": "Dependencies: calls without an answer",
+   "description": "timeouts, refused connections and 5xx: each is retried with the same idempotency key",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (peer_service) (rate(http_client_requests_seconds_count{outcome!~\"SUCCESS|CLIENT_ERROR\"}[1m]))",
+     "legendFormat": "{{peer_service}}",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 32,
+    "w": 12,
+    "h": 6
+   },
+   "id": 16
+  }
+ ],
+ "links": [
+  {
+   "title": "Dashboards",
+   "type": "dashboards",
+   "tags": [
+    "ledgerline"
+   ],
+   "asDropdown": false
+  }
+ ],
+ "templating": {
+  "list": []
+ },
+ "annotations": {
+  "list": [
+   {
+    "name": "Alerts firing",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "enable": true,
+    "iconColor": "red",
+    "expr": "ALERTS{alertstate=\"firing\"}",
+    "titleFormat": "{{alertname}}",
+    "textFormat": "{{summary}}",
+    "step": "30s",
+    "useValueForTime": false
+   }
+  ]
+ }
+}

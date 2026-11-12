@@ -1,6 +1,7 @@
 package dev.ledgerline.payments
 
 import dev.ledgerline.platform.Outbox
+import dev.ledgerline.platform.Traces
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.transaction.support.TransactionTemplate
@@ -39,9 +40,10 @@ class Payments(
     json: JsonMapper,
     meters: MeterRegistry,
     webhooks: Webhooks? = null,
+    traces: Traces = Traces.NONE,
 ) {
-    val payments = Machine(db, outbox, json, clock, meters, "payments", "payment", PAYMENT_STEPS, { payment(it) }, webhooks)
-    val refunds = Machine(db, outbox, json, clock, meters, "refunds", "refund", setOf("refunding"), { refund(it) }, webhooks)
+    val payments = Machine(db, outbox, json, clock, meters, "payments", "payment", PAYMENT_STEPS, { payment(it) }, webhooks, traces)
+    val refunds = Machine(db, outbox, json, clock, meters, "refunds", "refund", setOf("refunding"), { refund(it) }, webhooks, traces)
 
     // --- intents (in the idempotency layer's transaction) --------------------------------------------
 
@@ -57,9 +59,9 @@ class Payments(
         val id = UUID.randomUUID()
         val now = Timestamp.from(clock.instant())
         db.sql(
-            """INSERT INTO payments (id, customer, merchant, currency, amount, state, description, version, next_attempt_at, created_at, updated_at, holds_account)
-               VALUES (:id, :c, :m, :cur, :a, 'authorising', :d, 1, :next, :now, :now, :holds)""",
-        ).param("id", id).param("c", req.customer).param("m", req.merchant).param("cur", customer.currency).param("a", req.amount)
+            """INSERT INTO payments (id, customer, merchant, currency, amount, state, description, version, next_attempt_at, created_at, updated_at, holds_account, trace_context)
+               VALUES (:id, :c, :m, :cur, :a, 'authorising', :d, 1, :next, :now, :now, :holds, :tc)""",
+        ).param("id", id).param("tc", payments.trace()).param("c", req.customer).param("m", req.merchant).param("cur", customer.currency).param("a", req.amount)
             .param("holds", holds)
             .param("d", req.description).param("next", Timestamp.from(clock.instant().plus(Machine.LEASE))).param("now", now).update()
         payments.created(id, "authorising")
@@ -96,9 +98,9 @@ class Payments(
         val id = UUID.randomUUID()
         val now = Timestamp.from(clock.instant())
         db.sql(
-            """INSERT INTO refunds (id, payment_id, amount, state, version, next_attempt_at, created_at, updated_at)
-               VALUES (:id, :p, :a, 'refunding', 1, :next, :now, :now)""",
-        ).param("id", id).param("p", paymentId).param("a", req.amount)
+            """INSERT INTO refunds (id, payment_id, amount, state, version, next_attempt_at, created_at, updated_at, trace_context)
+               VALUES (:id, :p, :a, 'refunding', 1, :next, :now, :now, :tc)""",
+        ).param("id", id).param("tc", refunds.trace()).param("p", paymentId).param("a", req.amount)
             .param("next", Timestamp.from(clock.instant().plus(Machine.LEASE))).param("now", now).update()
         refunds.created(id, "refunding")
         return refund(id)

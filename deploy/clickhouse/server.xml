@@ -7,10 +7,22 @@
     <background_pool_size>4</background_pool_size>
     <!-- On one CPU the default pool is a single thread: 4 (8 tasks), and merge thresholds that fit it. -->
     <merge_tree>
+        <!-- A merge leaves the parts it merged on disk for 8 minutes by default. Fed a few inserts a
+             second, ClickHouse merges all the time, and at ~600,000 rows those outdated parts took 1 GB
+             (the live data: 100 MB). A minute is enough: this data can be rebuilt from Kafka. -->
+        <old_parts_lifetime>60</old_parts_lifetime>
         <number_of_free_entries_in_pool_to_execute_mutation>4</number_of_free_entries_in_pool_to_execute_mutation>
         <number_of_free_entries_in_pool_to_lower_max_size_of_merge>4</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
         <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>4</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
     </merge_tree>
+    <!-- Metrics for Prometheus (deploy/observability/prometheus.yaml keeps a few). -->
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
     <logger>
         <level>warning</level>
         <console>1</console>

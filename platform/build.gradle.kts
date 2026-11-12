@@ -10,6 +10,7 @@ dependencies {
     implementation("jakarta.servlet:jakarta.servlet-api")
     implementation("tools.jackson.core:jackson-databind")
     implementation("io.micrometer:micrometer-core")
+    api("io.micrometer:micrometer-tracing")
     implementation("org.slf4j:slf4j-api")
 
     testImplementation("org.springframework:spring-test")

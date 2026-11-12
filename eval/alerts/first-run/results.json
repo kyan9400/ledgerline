@@ -1,0 +1,195 @@
+{
+  "ok": false,
+  "scenarios": [
+    {
+      "scenario": "baseline",
+      "fault_seconds": 480,
+      "expected": [],
+      "missed": [],
+      "unexpected": [],
+      "alerts": {}
+    },
+    {
+      "scenario": "ledger-down",
+      "fault_seconds": 182,
+      "expected": [
+        "ServiceDown",
+        "PaymentsNotFinishing"
+      ],
+      "missed": [],
+      "unexpected": [],
+      "alerts": {
+        "ServiceDown": {
+          "severity": "page",
+          "fired_after_s": 78,
+          "cleared_after_fault_s": 16,
+          "labels": [
+            "{\"job\": \"ledger\"}"
+          ]
+        },
+        "PaymentsNotFinishing": {
+          "severity": "page",
+          "fired_after_s": 138,
+          "cleared_after_fault_s": 156,
+          "labels": [
+            "{\"entity\": \"payment\"}"
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "kafka-down",
+      "fault_seconds": 182,
+      "expected": [
+        "OutboxLagging"
+      ],
+      "missed": [
+        "OutboxLagging"
+      ],
+      "unexpected": [
+        "LoadShedding"
+      ],
+      "alerts": {
+        "LoadShedding": {
+          "severity": "ticket",
+          "fired_after_s": 99,
+          "cleared_after_fault_s": 0,
+          "labels": [
+            "{\"job\": \"payments\"}"
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "fraud-down",
+      "fault_seconds": 241,
+      "expected": [
+        "ServiceDown",
+        "FraudScorerFailingOpen"
+      ],
+      "missed": [],
+      "unexpected": [
+        "LoadShedding"
+      ],
+      "alerts": {
+        "ServiceDown": {
+          "severity": "page",
+          "fired_after_s": 86,
+          "cleared_after_fault_s": 15,
+          "labels": [
+            "{\"job\": \"fraud\"}"
+          ]
+        },
+        "FraudScorerFailingOpen": {
+          "severity": "ticket",
+          "fired_after_s": 156,
+          "cleared_after_fault_s": 266,
+          "labels": [
+            "{}"
+          ]
+        },
+        "LoadShedding": {
+          "severity": "ticket",
+          "fired_after_s": 426,
+          "cleared_after_fault_s": 205,
+          "labels": [
+            "{\"job\": \"payments\"}"
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "slow-ledger",
+      "fault_seconds": 361,
+      "expected": [
+        "ApiLatencyBudgetBurn"
+      ],
+      "missed": [
+        "ApiLatencyBudgetBurn"
+      ],
+      "unexpected": [
+        "LoadShedding"
+      ],
+      "alerts": {
+        "LoadShedding": {
+          "severity": "ticket",
+          "fired_after_s": 341,
+          "cleared_after_fault_s": 300,
+          "labels": [
+            "{\"job\": \"payments\"}"
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "postgres-down",
+      "fault_seconds": 121,
+      "expected": [
+        "ApiErrorBudgetBurn"
+      ],
+      "missed": [
+        "ApiErrorBudgetBurn"
+      ],
+      "unexpected": [],
+      "alerts": {}
+    },
+    {
+      "scenario": "webhooks-down",
+      "fault_seconds": 420,
+      "expected": [
+        "WebhooksFailing"
+      ],
+      "missed": [],
+      "unexpected": [
+        "LoadShedding"
+      ],
+      "alerts": {
+        "LoadShedding": {
+          "severity": "ticket",
+          "fired_after_s": 210,
+          "cleared_after_fault_s": 0,
+          "labels": [
+            "{\"job\": \"payments\"}"
+          ]
+        },
+        "WebhooksFailing": {
+          "severity": "ticket",
+          "fired_after_s": 340,
+          "cleared_after_fault_s": 951,
+          "labels": [
+            "{}"
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "books-wrong",
+      "fault_seconds": 85,
+      "expected": [
+        "LedgerBooksWrong"
+      ],
+      "missed": [],
+      "unexpected": [
+        "WebhooksFailing"
+      ],
+      "alerts": {
+        "WebhooksFailing": {
+          "severity": "ticket",
+          "fired_after_s": 8,
+          "cleared_after_fault_s": 223,
+          "labels": [
+            "{}"
+          ]
+        },
+        "LedgerBooksWrong": {
+          "severity": "page",
+          "fired_after_s": 78,
+          "cleared_after_fault_s": 63,
+          "labels": [
+            "{}"
+          ]
+        }
+      }
+    }
+  ]
+}

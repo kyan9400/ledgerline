@@ -5,3 +5,6 @@ lightgbm==4.7.0
 numpy==2.5.4
 scikit-learn==1.9.1
 prometheus-client==0.26.0
+opentelemetry-api==1.45.1
+opentelemetry-sdk==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.45.1

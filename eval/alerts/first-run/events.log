@@ -1,0 +1,25 @@
+1794396940 start baseline
+1794397420 end baseline
+1794397421 quiet after baseline
+1794397481 start ledger-down
+1794397663 end ledger-down
+1794397830 quiet after ledger-down
+1794397890 start kafka-down
+1794398072 end kafka-down
+1794398073 quiet after kafka-down
+1794398133 start fraud-down
+1794398374 end fraud-down
+1794398659 quiet after fraud-down
+1794398719 start slow-ledger
+1794399080 end slow-ledger
+1794399388 quiet after slow-ledger
+1794399448 start postgres-down
+1794399569 end postgres-down
+1794399570 quiet after postgres-down
+1794399570 start webhooks-down
+1794399990 end webhooks-down
+1794400943 still firing after 15 minutes: "alertname":"WebhooksFailing" 
+1794400943 quiet after webhooks-down
+1794400943 start books-wrong
+1794401028 end books-wrong
+1794401261 quiet after books-wrong

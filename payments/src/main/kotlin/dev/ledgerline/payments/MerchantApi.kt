@@ -25,6 +25,8 @@ import io.grpc.StatusRuntimeException
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder
 import io.grpc.stub.ServerCallStreamObserver
 import io.grpc.stub.StreamObserver
+import io.micrometer.core.instrument.binder.grpc.ObservationGrpcServerInterceptor
+import io.micrometer.observation.ObservationRegistry
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.TopicPartition
@@ -262,7 +264,13 @@ class MerchantApi(
 }
 
 /** The gRPC server, started and stopped with the application. */
-class GrpcServer(private val port: Int, private val api: MerchantApi, private val merchants: Merchants) : SmartLifecycle {
+/** Each call is observed (ObservationGrpcServerInterceptor): a span continuing the caller's trace, and the grpc.server timer. */
+class GrpcServer(
+    private val port: Int,
+    private val api: MerchantApi,
+    private val merchants: Merchants,
+    private val observations: ObservationRegistry = ObservationRegistry.NOOP,
+) : SmartLifecycle {
     private val log = LoggerFactory.getLogger(javaClass)
     private var server: Server? = null
 
@@ -272,7 +280,8 @@ class GrpcServer(private val port: Int, private val api: MerchantApi, private va
     override fun start() {
         server = NettyServerBuilder.forPort(port)
             .executor(Executors.newVirtualThreadPerTaskExecutor())
-            .addService(ServerInterceptors.intercept(api, MerchantApi.authenticate(merchants)))
+            // The last runs first: the observation wraps everything, the refusals included.
+            .addService(ServerInterceptors.intercept(api, MerchantApi.authenticate(merchants), ObservationGrpcServerInterceptor(observations)))
             .build().start()
         log.info("merchants' gRPC API on port {}", server!!.port)
     }

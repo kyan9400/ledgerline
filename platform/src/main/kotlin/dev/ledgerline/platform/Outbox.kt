@@ -22,11 +22,12 @@ import java.time.Instant
  *     event_id   text NOT NULL,
  *     type       text NOT NULL,
  *     payload    text NOT NULL,
- *     created_at timestamptz NOT NULL DEFAULT now()
+ *     created_at timestamptz NOT NULL DEFAULT now(),
+ *     trace_context text  -- the trace the change was made in (see [Traces])
  * );
  * ```
  */
-class Outbox(private val db: JdbcClient, private val json: JsonMapper) {
+class Outbox(private val db: JdbcClient, private val json: JsonMapper, private val traces: Traces = Traces.NONE) {
 
     /** Within the caller's transaction. The Kafka key is the stream, so a stream's events stay in order. */
     fun add(topic: String, stream: String, version: Int, type: String, data: Any?, at: Instant) =
@@ -43,7 +44,8 @@ class Outbox(private val db: JdbcClient, private val json: JsonMapper) {
             append(",\"recordedAt\":\"").append(at).append('"')
             append(",\"data\":").append(dataJson).append('}')
         }
-        db.sql("INSERT INTO outbox (topic, key, event_id, type, payload) VALUES (:topic, :key, :id, :type, :payload)")
-            .param("topic", topic).param("key", stream).param("id", id).param("type", type).param("payload", payload).update()
+        db.sql("INSERT INTO outbox (topic, key, event_id, type, payload, trace_context) VALUES (:topic, :key, :id, :type, :payload, :tc)")
+            .param("topic", topic).param("key", stream).param("id", id).param("type", type).param("payload", payload)
+            .param("tc", traces.current()).update()
     }
 }

@@ -1,0 +1,157 @@
+# Unit tests of the alert rules, on made-up series:
+#   docker run --rm -v "$PWD/deploy/observability:/o" -w /o --entrypoint promtool prom/prometheus:v3.15.1 test rules alerts.test.yaml
+rule_files: [alerts.yaml]
+evaluation_interval: 15s
+
+tests:
+  # A payment waiting more than 60 s pages once it has for a minute; one that catches up doesn't.
+  - interval: 15s
+    input_series:
+      - series: 'payments_backlog_oldest_seconds{job="payments", entity="payment"}'
+        values: '0x7 30 45 60 75 90 105 120 135 150 165 180'
+      - series: 'payments_backlog_oldest_seconds{job="payments", entity="payout"}'
+        values: '0x7 30 45 60 75 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 3m30s
+        alertname: PaymentsNotFinishing
+        exp_alerts: []
+      - eval_time: 4m15s
+        alertname: PaymentsNotFinishing
+        exp_alerts:
+          - exp_labels: { severity: page, entity: payment }
+            exp_annotations: { summary: "a payment has waited 2m 45s for its next step (the ledger is unreachable?)" }
+
+  # 1 request in 6 failing pages (over 14.4 x 0.5%); 1 in 200 (the SLO's budget, spent evenly) doesn't.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="payments", uri="/v1/payments", status="201"}'
+        values: '0+500x30'
+      - series: 'http_server_requests_seconds_count{job="payments", uri="/v1/payments", status="500"}'
+        values: '0+100x30'
+      - series: 'http_server_requests_seconds_count{job="payments", uri="/actuator/health", status="503"}'
+        values: '0+1000x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ApiErrorBudgetBurn
+        exp_alerts:
+          - exp_labels: { severity: page }
+            exp_annotations: { summary: "16.67% of API requests fail (SLO: 0.5%); at this rate a month's budget lasts 2 days" }
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="ledger", uri="/v1/transfers", status="201"}'
+        values: '0+995x30'
+      - series: 'http_server_requests_seconds_count{job="ledger", uri="/v1/transfers", status="500"}'
+        values: '0+5x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ApiErrorBudgetBurn
+        exp_alerts: []
+
+  # Requests over 1 s, counted from the histogram's 1 s bucket, over HTTP and gRPC together.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="payments", uri="/v1/payments", status="201"}'
+        values: '0+100x30'
+      - series: 'http_server_requests_seconds_bucket{job="payments", uri="/v1/payments", status="201", le="1.0"}'
+        values: '0+70x30'
+      - series: 'grpc_server_seconds_count{job="payments", grpc_status_code="OK"}'
+        values: '0+100x30'
+      - series: 'grpc_server_seconds_bucket{job="payments", grpc_status_code="OK", le="1.0"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ApiLatencyBudgetBurn
+        exp_alerts:
+          - exp_labels: { severity: page }
+            exp_annotations: { summary: "15% of API requests take over 1 s (SLO: 1%)" }
+
+  # A dependency slow at the median for 10 minutes makes a ticket; a slow tail alone doesn't.
+  - interval: 1m
+    input_series:
+      - series: 'http_client_requests_seconds_bucket{job="payments", peer_service="ledger", le="0.5"}'
+        values: '0+100x5 500+0x20'
+      - series: 'http_client_requests_seconds_bucket{job="payments", peer_service="ledger", le="2.0"}'
+        values: '0+100x25'
+      - series: 'http_client_requests_seconds_bucket{job="payments", peer_service="ledger", le="+Inf"}'
+        values: '0+100x25'
+      - series: 'http_client_requests_seconds_bucket{job="payments", peer_service="otherbank", le="0.5"}'
+        values: '0+95x25'
+      - series: 'http_client_requests_seconds_bucket{job="payments", peer_service="otherbank", le="+Inf"}'
+        values: '0+100x25'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: DependencySlow
+        exp_alerts: []
+      - eval_time: 22m
+        alertname: DependencySlow
+        exp_alerts:
+          - exp_labels: { severity: ticket, peer_service: ledger }
+            exp_annotations: { summary: "half of payments' calls to ledger take over 1.25s" }
+
+  # Fraud: a fifth of card payments unscored for two minutes.
+  - interval: 30s
+    input_series:
+      - series: 'payments_transitions_total{job="payments", entity="payment", to="authorising"}'
+        values: '0+50x20'
+      - series: 'payments_fraud_unscored_total{job="payments"}'
+        values: '0x4 0+10x15'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: FraudScorerFailingOpen
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: FraudScorerFailingOpen
+        exp_alerts:
+          - exp_labels: { severity: ticket }
+            exp_annotations: { summary: "20% of card payments go through unscored (the fraud scorer fails open)" }
+
+  # The books: any problem the audit finds pages at once.
+  - interval: 1m
+    input_series:
+      - series: 'ledger_audit_violations{job="ledger", check="balances_not_matching_events"}'
+        values: '0 0 1 1'
+      - series: 'ledger_audit_violations{job="ledger", check="overdrawn_accounts"}'
+        values: '0 0 0 0'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LedgerBooksWrong
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: LedgerBooksWrong
+        exp_alerts:
+          - exp_labels: { severity: page }
+            exp_annotations: { summary: "the ledger's audit found 1 things wrong with the books" }
+
+  # A database out of reach for 30 s pages, per service.
+  - interval: 15s
+    input_series:
+      - series: 'ledgerline_database_up{job="payments", instance="payments:8080"}'
+        values: '1 1 0 0 0 0 1'
+      - series: 'ledgerline_database_up{job="ledger", instance="ledger:8080"}'
+        values: '1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 15s
+        alertname: DatabaseUnreachable
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: DatabaseUnreachable
+        exp_alerts:
+          - exp_labels: { severity: page, job: payments }
+            exp_annotations: { summary: "payments can't reach its database" }
+      - eval_time: 1m30s
+        alertname: DatabaseUnreachable
+        exp_alerts: []
+
+  # A service that misses scrapes for a minute.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="ledger", instance="ledger:8080"}'
+        values: '1 1 0 0 0 0 0 0'
+      - series: 'up{job="otherbank", instance="otherbank:8090"}'
+        values: '0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 1m45s
+        alertname: ServiceDown
+        exp_alerts:
+          - exp_labels: { severity: page, job: ledger, instance: "ledger:8080" }
+            exp_annotations: { summary: "ledger has not answered a scrape for a minute" }

@@ -1,6 +1,7 @@
 package dev.ledgerline.payments
 
 import dev.ledgerline.platform.Outbox
+import dev.ledgerline.platform.Traces
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.transaction.support.TransactionTemplate
@@ -37,8 +38,9 @@ class Payouts(
     outbox: Outbox,
     json: JsonMapper,
     meters: MeterRegistry,
+    traces: Traces = Traces.NONE,
 ) {
-    val payouts = Machine(db, outbox, json, clock, meters, "payouts", "payout", PAYOUT_STEPS, { payout(it) })
+    val payouts = Machine(db, outbox, json, clock, meters, "payouts", "payout", PAYOUT_STEPS, { payout(it) }, traces = traces)
 
     fun createIn(req: PayoutRequest): Payout {
         if (req.amount <= 0) throw Invalid("amount must be positive")
@@ -52,9 +54,9 @@ class Payouts(
         val id = UUID.randomUUID()
         val now = Timestamp.from(clock.instant())
         db.sql(
-            """INSERT INTO payouts (id, account, currency, amount, bank, beneficiary, state, description, version, next_attempt_at, created_at, updated_at, clearing_account)
-               VALUES (:id, :a, :cur, :amt, :bank, :b, 'reserving', :d, 1, :next, :now, :now, :clearing)""",
-        ).param("id", id).param("a", req.account).param("cur", account.currency).param("amt", req.amount).param("bank", req.bank)
+            """INSERT INTO payouts (id, account, currency, amount, bank, beneficiary, state, description, version, next_attempt_at, created_at, updated_at, clearing_account, trace_context)
+               VALUES (:id, :a, :cur, :amt, :bank, :b, 'reserving', :d, 1, :next, :now, :now, :clearing, :tc)""",
+        ).param("id", id).param("tc", payouts.trace()).param("a", req.account).param("cur", account.currency).param("amt", req.amount).param("bank", req.bank)
             .param("clearing", clearing)
             .param("b", req.beneficiary).param("d", req.description).param("next", Timestamp.from(clock.instant().plus(Machine.LEASE)))
             .param("now", now).update()

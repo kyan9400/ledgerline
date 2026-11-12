@@ -1,0 +1,154 @@
+# Ledgerline's alerts. Two kinds:
+#
+# - Symptoms, against SLOs: the APIs answer (99.5% of requests without a server error) and answer fast
+#   (99% within 1 s). These page on how fast the error budget burns, over a long and a short window
+#   together (the long one says it matters, the short one that it is still happening), as in Google's
+#   SRE workbook: 14.4x the sustainable rate pages, 6x makes a ticket.
+# - What the request metrics can't see. A payment held up by a ledger that is down still gets an answer
+#   (202: the worker will finish it), so the work waiting is watched too, and the books themselves.
+#
+# Every alert has a runbook: docs/runbooks.md, under its name.
+groups:
+  - name: slo-recording
+    rules:
+      # Requests to the APIs (the ledger's and payments' /v1, and the merchants' gRPC API), and those that
+      # failed on the server's side: HTTP 5xx, gRPC UNAVAILABLE, INTERNAL, UNKNOWN, DEADLINE_EXCEEDED.
+      - record: ledgerline:api_requests:rate5m
+        expr: >-
+          (sum(rate(http_server_requests_seconds_count{job=~"ledger|payments", uri=~"/v1/.*"}[5m])) or vector(0))
+          + (sum(rate(grpc_server_seconds_count{job="payments"}[5m])) or vector(0))
+      - record: ledgerline:api_errors:rate5m
+        expr: >-
+          (sum(rate(http_server_requests_seconds_count{job=~"ledger|payments", uri=~"/v1/.*", status=~"5.."}[5m])) or vector(0))
+          + (sum(rate(grpc_server_seconds_count{job="payments", grpc_status_code=~"UNAVAILABLE|INTERNAL|UNKNOWN|DEADLINE_EXCEEDED"}[5m])) or vector(0))
+      - record: ledgerline:api_slow:rate5m
+        expr: >-
+          ((sum(rate(http_server_requests_seconds_count{job=~"ledger|payments", uri=~"/v1/.*"}[5m])) or vector(0))
+            - (sum(rate(http_server_requests_seconds_bucket{job=~"ledger|payments", uri=~"/v1/.*", le="1.0"}[5m])) or vector(0)))
+          + ((sum(rate(grpc_server_seconds_count{job="payments"}[5m])) or vector(0))
+            - (sum(rate(grpc_server_seconds_bucket{job="payments", le="1.0"}[5m])) or vector(0)))
+
+  - name: slo-windows
+    # The ratios over each window the burn-rate alerts use, from the 5-minute rates above.
+    rules:
+      - record: ledgerline:api_error_ratio:5m
+        expr: ledgerline:api_errors:rate5m / clamp_min(ledgerline:api_requests:rate5m, 1e-9)
+      - record: ledgerline:api_error_ratio:30m
+        expr: sum_over_time(ledgerline:api_errors:rate5m[30m]) / clamp_min(sum_over_time(ledgerline:api_requests:rate5m[30m]), 1e-9)
+      - record: ledgerline:api_error_ratio:1h
+        expr: sum_over_time(ledgerline:api_errors:rate5m[1h]) / clamp_min(sum_over_time(ledgerline:api_requests:rate5m[1h]), 1e-9)
+      - record: ledgerline:api_error_ratio:6h
+        expr: sum_over_time(ledgerline:api_errors:rate5m[6h]) / clamp_min(sum_over_time(ledgerline:api_requests:rate5m[6h]), 1e-9)
+      - record: ledgerline:api_slow_ratio:5m
+        expr: ledgerline:api_slow:rate5m / clamp_min(ledgerline:api_requests:rate5m, 1e-9)
+      - record: ledgerline:api_slow_ratio:1h
+        expr: sum_over_time(ledgerline:api_slow:rate5m[1h]) / clamp_min(sum_over_time(ledgerline:api_requests:rate5m[1h]), 1e-9)
+
+  - name: ledgerline
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"ledger|payments|fraud|clickhouse"} == 0
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }} has not answered a scrape for a minute"
+
+      - alert: DatabaseUnreachable
+        expr: max by (job) (ledgerline_database_up) == 0
+        for: 30s
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }} can't reach its database"
+
+      - alert: ApiErrorBudgetBurn
+        expr: ledgerline:api_error_ratio:5m > 14.4 * 0.005 and ledgerline:api_error_ratio:1h > 14.4 * 0.005
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of API requests fail (SLO: 0.5%); at this rate a month's budget lasts 2 days"
+
+      - alert: ApiErrorBudgetBurnSlow
+        expr: ledgerline:api_error_ratio:30m > 6 * 0.005 and ledgerline:api_error_ratio:6h > 6 * 0.005
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of API requests have failed over 30 minutes (SLO: 0.5%)"
+
+      - alert: ApiLatencyBudgetBurn
+        expr: ledgerline:api_slow_ratio:5m > 14.4 * 0.01 and ledgerline:api_slow_ratio:1h > 14.4 * 0.01
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of API requests take over 1 s (SLO: 1%)"
+
+      - alert: PaymentsNotFinishing
+        expr: max by (entity) (payments_backlog_oldest_seconds{entity=~"payment|refund"}) > 60
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: "a {{ $labels.entity }} has waited {{ $value | humanizeDuration }} for its next step (the ledger is unreachable?)"
+
+      - alert: PayoutsNotFinishing
+        expr: max(payments_backlog_oldest_seconds{entity="payout"}) > 600
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "a payout has waited {{ $value | humanizeDuration }} for its next step (the bank?)"
+
+      # A cause, for when the symptoms stay under the SLO's page: a slow dependency makes requests wait
+      # (and fewer arrive), so the hour's share of slow requests can stay low for a long time. The
+      # median, not p99: the simulated bank answers 5% of calls late on purpose.
+      - alert: DependencySlow
+        expr: histogram_quantile(0.5, sum by (le, peer_service) (rate(http_client_requests_seconds_bucket{job="payments"}[5m]))) > 0.5
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "half of payments' calls to {{ $labels.peer_service }} take over {{ $value | humanizeDuration }}"
+
+      - alert: PaymentsStuck
+        expr: sum by (entity) (increase(payments_stuck_total[15m])) > 0
+        labels: { severity: ticket }
+        annotations:
+          summary: "a {{ $labels.entity }} is stuck: the ledger refused a step that shouldn't be refused (needs a person)"
+
+      - alert: OutboxLagging
+        expr: max by (job) (outbox_lag_seconds) > 30
+        for: 1m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.job }}'s events reach Kafka {{ $value | humanizeDuration }} late: the fraud features, analytics and merchants' streams are behind"
+
+      - alert: FraudScorerFailingOpen
+        expr: >-
+          sum(rate(payments_fraud_unscored_total[5m]))
+            / clamp_min(sum(rate(payments_transitions_total{entity="payment", to="authorising"}[5m])), 1e-9) > 0.1
+        for: 2m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of card payments go through unscored (the fraud scorer fails open)"
+
+      - alert: WebhooksFailing
+        expr: >-
+          sum(rate(payments_webhooks_retried_total[5m]))
+            / clamp_min(sum(rate(payments_webhooks_retried_total[5m])) + sum(rate(payments_webhooks_delivered_total[5m])), 1e-9) > 0.5
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of webhook deliveries fail"
+
+      - alert: LoadShedding
+        expr: sum by (job) (rate(admission_shed_total[5m])) > 1
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.job }} turns away {{ $value | humanize }} requests a second (busy)"
+
+      - alert: LedgerBooksWrong
+        expr: sum(ledger_audit_violations) > 0
+        labels: { severity: page }
+        annotations:
+          summary: "the ledger's audit found {{ $value }} things wrong with the books"
+
+      - alert: LedgerAuditNotRunning
+        expr: time() - ledger_audit_last_success_seconds > 1800
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "the ledger's audit last completed {{ $value | humanizeDuration }} ago"

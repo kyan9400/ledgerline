@@ -1,0 +1,1067 @@
+{
+ "uid": "payments",
+ "title": "Ledgerline: payments",
+ "description": "Is the money moving? A payment the ledger can't take now still gets an answer (202), so watch the work waiting here.",
+ "tags": [
+  "ledgerline"
+ ],
+ "schemaVersion": 41,
+ "version": 1,
+ "editable": false,
+ "graphTooltip": 1,
+ "refresh": "30s",
+ "time": {
+  "from": "now-1h",
+  "to": "now"
+ },
+ "timezone": "utc",
+ "panels": [
+  {
+   "type": "row",
+   "title": "The work",
+   "collapsed": false,
+   "id": 1,
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "type": "timeseries",
+   "title": "State changes per second",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (entity, to) (rate(payments_transitions_total[1m]))",
+     "legendFormat": "{{entity}} \u2192 {{to}}",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 25,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "normal"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 1,
+    "w": 12,
+    "h": 8
+   },
+   "id": 2
+  },
+  {
+   "type": "timeseries",
+   "title": "Oldest waiting for its next step",
+   "description": "the alert: a payment or refund waiting over 60 s for a minute",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (entity) (payments_backlog_oldest_seconds)",
+     "legendFormat": "{{entity}}",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "dashed"
+      }
+     },
+     "min": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "transparent"
+       },
+       {
+        "value": 60,
+        "color": "red"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 1,
+    "w": 6,
+    "h": 8
+   },
+   "id": 3
+  },
+  {
+   "type": "timeseries",
+   "title": "Waiting for a step",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (entity) (payments_backlog_rows)",
+     "legendFormat": "{{entity}}",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 18,
+    "y": 1,
+    "w": 6,
+    "h": 8
+   },
+   "id": 4
+  },
+  {
+   "type": "timeseries",
+   "title": "Retries and stuck steps",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (entity) (rate(payments_retries_total[1m]))",
+     "legendFormat": "{{entity}} retried",
+     "refId": "A",
+     "exemplar": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (entity) (increase(payments_stuck_total[5m]))",
+     "legendFormat": "{{entity}} stuck (5 min)",
+     "refId": "B",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 9,
+    "w": 8,
+    "h": 7
+   },
+   "id": 5
+  },
+  {
+   "type": "timeseries",
+   "title": "Outbox: how late events reach Kafka",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (job) (outbox_lag_seconds)",
+     "legendFormat": "{{job}}",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "dashed"
+      }
+     },
+     "min": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "transparent"
+       },
+       {
+        "value": 30,
+        "color": "red"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 9,
+    "w": 8,
+    "h": 7
+   },
+   "id": 6
+  },
+  {
+   "type": "timeseries",
+   "title": "Outbox: events sent per second",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (job) (rate(outbox_published_total[1m]))",
+     "legendFormat": "{{job}}",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 9,
+    "w": 8,
+    "h": 7
+   },
+   "id": 7
+  },
+  {
+   "type": "row",
+   "title": "Merchants and fraud",
+   "collapsed": false,
+   "id": 8,
+   "gridPos": {
+    "x": 0,
+    "y": 16,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "type": "timeseries",
+   "title": "Webhooks",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(payments_webhooks_delivered_total[1m]))",
+     "legendFormat": "delivered",
+     "refId": "A",
+     "exemplar": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(payments_webhooks_retried_total[1m]))",
+     "legendFormat": "refused, to retry",
+     "refId": "B",
+     "exemplar": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(payments_webhooks_failed_total[1m]))",
+     "legendFormat": "given up (after 12 tries)",
+     "refId": "C",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 17,
+    "w": 8,
+    "h": 7
+   },
+   "id": 9
+  },
+  {
+   "type": "timeseries",
+   "title": "Fraud: card payments unscored or declined",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(payments_fraud_unscored_total[1m]))",
+     "legendFormat": "unscored (scorer down or slow: let through)",
+     "refId": "A",
+     "exemplar": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(payments_fraud_declined_total[1m]))",
+     "legendFormat": "declined",
+     "refId": "B",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 17,
+    "w": 8,
+    "h": 7
+   },
+   "id": 10
+  },
+  {
+   "type": "timeseries",
+   "title": "Fraud scorer: time to score",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(fraud_score_seconds_bucket[5m])))",
+     "legendFormat": "p99",
+     "refId": "A",
+     "exemplar": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(http_client_requests_seconds_bucket{peer_service=\"fraud\"}[5m])))",
+     "legendFormat": "p99 as payments sees it (timeout 150 ms)",
+     "refId": "B",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 17,
+    "w": 8,
+    "h": 7
+   },
+   "id": 11
+  },
+  {
+   "type": "row",
+   "title": "The books, and underneath",
+   "collapsed": false,
+   "id": 12,
+   "gridPos": {
+    "x": 0,
+    "y": 24,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "type": "stat",
+   "title": "Audit: problems found",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(ledger_audit_violations)",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 1,
+        "color": "red"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "area",
+    "textMode": "value"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 25,
+    "w": 4,
+    "h": 5
+   },
+   "id": 13
+  },
+  {
+   "type": "stat",
+   "title": "Audit: last completed",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "time() - ledger_audit_last_success_seconds",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       },
+       {
+        "value": 1800,
+        "color": "red"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "area",
+    "textMode": "value"
+   },
+   "gridPos": {
+    "x": 4,
+    "y": 25,
+    "w": 4,
+    "h": 5
+   },
+   "id": 14
+  },
+  {
+   "type": "stat",
+   "title": "Audit: took",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "ledger_audit_duration_seconds",
+     "legendFormat": "__auto",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "value": null,
+        "color": "green"
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "area",
+    "textMode": "value"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 25,
+    "w": 4,
+    "h": 5
+   },
+   "id": 15
+  },
+  {
+   "type": "timeseries",
+   "title": "Load shedding",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (job) (admission_in_flight)",
+     "legendFormat": "{{job}} in flight",
+     "refId": "A",
+     "exemplar": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (job) (rate(admission_shed_total[1m]))",
+     "legendFormat": "{{job}} turned away /s",
+     "refId": "B",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 25,
+    "w": 12,
+    "h": 5
+   },
+   "id": 16
+  },
+  {
+   "type": "timeseries",
+   "title": "JVM heap used",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (job) (jvm_memory_used_bytes{area=\"heap\"})",
+     "legendFormat": "{{job}}",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 30,
+    "w": 8,
+    "h": 7
+   },
+   "id": 17
+  },
+  {
+   "type": "timeseries",
+   "title": "Database connections in use",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (job) (hikaricp_connections_active)",
+     "legendFormat": "{{job}} active",
+     "refId": "A",
+     "exemplar": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (job) (hikaricp_connections_pending)",
+     "legendFormat": "{{job}} waiting",
+     "refId": "B",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 30,
+    "w": 8,
+    "h": 7
+   },
+   "id": 18
+  },
+  {
+   "type": "timeseries",
+   "title": "GC pauses",
+   "description": "share of time paused for garbage collection",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (job) (rate(jvm_gc_pause_seconds_sum[1m]))",
+     "legendFormat": "{{job}}",
+     "refId": "A",
+     "exemplar": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 8,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 30,
+    "w": 8,
+    "h": 7
+   },
+   "id": 19
+  }
+ ],
+ "links": [
+  {
+   "title": "Dashboards",
+   "type": "dashboards",
+   "tags": [
+    "ledgerline"
+   ],
+   "asDropdown": false
+  }
+ ],
+ "templating": {
+  "list": []
+ },
+ "annotations": {
+  "list": [
+   {
+    "name": "Alerts firing",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "enable": true,
+    "iconColor": "red",
+    "expr": "ALERTS{alertstate=\"firing\"}",
+    "titleFormat": "{{alertname}}",
+    "textFormat": "{{summary}}",
+    "step": "30s",
+    "useValueForTime": false
+   }
+  ]
+ }
+}

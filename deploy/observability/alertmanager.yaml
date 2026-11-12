@@ -1,0 +1,30 @@
+# Alertmanager: groups what Prometheus fires and routes it by severity. "page" is for now (money is not
+# moving, the books are wrong); "ticket" for the working day.
+#
+# No receiver sends anything yet: to get pages on Telegram, give the "page" receiver
+#
+#   telegram_configs:
+#     - bot_token_file: /etc/alertmanager/telegram-token   # a file mounted from the host, never in git
+#       chat_id: <your chat id>
+#       parse_mode: HTML
+#
+# Until then, what fires is in Alertmanager's API and in Grafana (Alerting, and the SLO dashboard).
+route:
+  receiver: ticket
+  group_by: [alertname, job]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity="page"]
+      receiver: page
+      repeat_interval: 1h
+
+# A service that is down explains the rest: don't also page for what follows from it.
+inhibit_rules:
+  - source_matchers: [alertname=~"ServiceDown|DatabaseUnreachable"]
+    target_matchers: [alertname=~"ApiErrorBudgetBurn|ApiLatencyBudgetBurn|PaymentsNotFinishing|FraudScorerFailingOpen|LoadShedding"]
+
+receivers:
+  - name: page
+  - name: ticket

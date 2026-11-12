@@ -4,7 +4,13 @@
 #   docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
 #   docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm checker   # rebuild the books from Kafka
 #
-# Nothing is published on the host's ports; reach the services through the Compose network.
+# Nothing is published on the host's ports but the dashboards' (Grafana and the analytics dashboard), on
+# its loopback only: reach them through an SSH tunnel.
+#
+# Observability: the services send traces to Tempo (a share of requests, TRACING_SAMPLING; 0.1 by
+# default) and are scraped by Prometheus, which evaluates the alerts (observability/alerts.yaml) and sends
+# what fires to Alertmanager. Grafana shows it all: ssh -L 18300:127.0.0.1:18300 <host>, then
+# http://localhost:18300 (anonymous viewers; admin's password is GRAFANA_ADMIN_PASSWORD).
 name: ledgerline
 
 x-labels: &labels
@@ -29,7 +35,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
       PAYMENTS_DB_PASSWORD: ${PAYMENTS_DB_PASSWORD:?set PAYMENTS_DB_PASSWORD in deploy/.env}
     command: ["-c", "max_connections=100", "-c", "shared_buffers=192MB",
-              "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
+              "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all",
+              # The WAL kept at most 256 MB (the default, 1 GB, is a lot of a small disk).
+              "-c", "max_wal_size=256MB", "-c", "min_wal_size=64MB"]
     volumes:
       - pg_data:/var/lib/postgresql
       # On first start: the payments service's database and role (it can't touch the ledger's).
@@ -93,6 +101,9 @@ services:
       LEDGER_DB_USER: ledger
       LEDGER_DB_PASSWORD: ${POSTGRES_PASSWORD}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      LEDGER_AUDIT_EVERY: ${LEDGER_AUDIT_EVERY:-10m}
+      MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING: ${TRACING_SAMPLING:-0.1}
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -122,6 +133,8 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       FRAUD_URL: http://fraud:8000
       FRAUD_MODE: ${FRAUD_MODE:-shadow}
+      MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING: ${TRACING_SAMPLING:-0.1}
     depends_on:
       postgres: { condition: service_healthy }
       ledger: { condition: service_healthy }
@@ -148,6 +161,7 @@ services:
     environment:
       KAFKA: kafka:9092
       PYTHONDONTWRITEBYTECODE: "1"
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://tempo:4318/v1/traces
     volumes:
       - fraud_model:/model:ro
     healthcheck:
@@ -239,6 +253,99 @@ services:
     <<: *hardened
     networks: [internal]
 
+  # --- Observability -----------------------------------------------------------------------------------
+
+  # Traces, 24 hours of them (observability/tempo.yaml); its service graph goes to Prometheus.
+  tempo:
+    image: grafana/tempo:2.10.10
+    command: ["-config.file=/etc/tempo.yaml"]
+    cpus: 0.5
+    mem_limit: 512m
+    restart: unless-stopped
+    labels: *labels
+    user: "10001:10001"
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [internal]
+
+  # Metrics and the alert rules: 15 days or 1 GB of them, whichever is less.
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=1GB
+      - --web.enable-remote-write-receiver
+      - --enable-feature=exemplar-storage
+      - --web.enable-lifecycle
+    cpus: 0.5
+    mem_limit: 512m
+    restart: unless-stopped
+    labels: *labels
+    volumes:
+      - ./observability/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - ./observability/alerts.yaml:/etc/prometheus/alerts.yaml:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [internal]
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.1
+    command: ["--config.file=/etc/alertmanager/alertmanager.yaml", "--storage.path=/alertmanager"]
+    cpus: 0.25
+    mem_limit: 64m
+    restart: unless-stopped
+    labels: *labels
+    volumes:
+      - ./observability/alertmanager.yaml:/etc/alertmanager/alertmanager.yaml:ro
+      - alertmanager_data:/alertmanager
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [internal]
+
+  # Dashboards, traces and alerts in one place; everything provisioned from observability/grafana.
+  grafana:
+    image: grafana/grafana:13.3.0
+    cpus: 0.5
+    mem_limit: 384m
+    restart: unless-stopped
+    labels: *labels
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in deploy/.env}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/overview.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+    ports: ["127.0.0.1:18300:3000"]
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus: { condition: service_healthy }
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [internal]
+
   # A tool, not a service: docker compose run --rm checker
   checker:
     image: ledgerline-checker:${LEDGERLINE_VERSION:-latest}
@@ -267,6 +374,10 @@ volumes:
   otherbank_data:
   fraud_model:
   ch_data:
+  tempo_data:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:
 
 networks:
   internal:

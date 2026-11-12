@@ -1,7 +1,10 @@
 package dev.ledgerline.payments
 
 import dev.ledgerline.platform.Outbox
+import dev.ledgerline.platform.Traces
 import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.observation.ObservationRegistry
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
@@ -18,8 +21,16 @@ class PaymentsApplication {
     fun clock(): Clock = Clock.systemUTC()
 
     @Bean
-    fun ledgerClient(@Value("\${payments.ledger.url}") url: String, @Value("\${payments.ledger.timeout}") timeout: Duration, json: JsonMapper): LedgerClient =
-        HttpService(url, timeout, json)
+    fun instrumentation(meters: MeterRegistry, observations: ObjectProvider<ObservationRegistry>) =
+        Instrumentation(meters, observations.getIfAvailable { ObservationRegistry.NOOP })
+
+    @Bean
+    fun ledgerClient(
+        @Value("\${payments.ledger.url}") url: String,
+        @Value("\${payments.ledger.timeout}") timeout: Duration,
+        json: JsonMapper,
+        instrumentation: Instrumentation,
+    ): LedgerClient = HttpService(url, timeout, json, instrumentation.http("ledger"))
 
     @Bean
     fun ledgerOps(client: LedgerClient) = LedgerOps(client)
@@ -33,7 +44,10 @@ class PaymentsApplication {
         @Value("\${payments.otherbank.url}") url: String,
         @Value("\${payments.otherbank.timeout}") timeout: Duration,
         json: JsonMapper,
-    ) = Banks(mapOf("otherbank" to BankClient(HttpService(url, timeout, json), HttpService(url, Duration.ofSeconds(30), json))))
+        instrumentation: Instrumentation,
+    ) = instrumentation.http("otherbank").let { http ->
+        Banks(mapOf("otherbank" to BankClient(HttpService(url, timeout, json, http), HttpService(url, Duration.ofSeconds(30), json, http))))
+    }
 
     /** The fraud scorer (payments.fraud.url; none: off). */
     @Bean
@@ -43,7 +57,12 @@ class PaymentsApplication {
         @Value("\${payments.fraud.timeout:150ms}") timeout: Duration,
         json: JsonMapper,
         meters: MeterRegistry,
-    ) = FraudCheck(url.takeIf { it.isNotBlank() }?.let { HttpService(it, timeout, json) }, if (url.isBlank()) "off" else mode, meters)
+        instrumentation: Instrumentation,
+    ) = FraudCheck(
+        url.takeIf { it.isNotBlank() }?.let { HttpService(it, timeout, json, instrumentation.http("fraud")) },
+        if (url.isBlank()) "off" else mode,
+        meters,
+    )
 
     @Bean
     fun idempotency(db: JdbcClient, json: JsonMapper, tx: TransactionTemplate) = Idempotency(db, json, tx)
@@ -61,7 +80,8 @@ class PaymentsApplication {
         json: JsonMapper,
         meters: MeterRegistry,
         webhooks: Webhooks,
-    ) = Payments(db, tx, ledger, accounts, clock, ttl, fraud, outbox, json, meters, webhooks)
+        traces: Traces,
+    ) = Payments(db, tx, ledger, accounts, clock, ttl, fraud, outbox, json, meters, webhooks, traces)
 
     @Bean
     fun payouts(
@@ -74,14 +94,15 @@ class PaymentsApplication {
         outbox: Outbox,
         json: JsonMapper,
         meters: MeterRegistry,
-    ) = Payouts(db, tx, ledger, accounts, banks.byName, clock, outbox, json, meters)
+        traces: Traces,
+    ) = Payouts(db, tx, ledger, accounts, banks.byName, clock, outbox, json, meters, traces)
 
     @Bean
     fun merchants(db: JdbcClient, ledger: LedgerOps) = Merchants(db, ledger)
 
     @Bean
-    fun webhooks(db: JdbcClient, merchants: Merchants, json: JsonMapper, clock: Clock, meters: MeterRegistry) =
-        Webhooks(db, merchants, json, clock, meters)
+    fun webhooks(db: JdbcClient, merchants: Merchants, json: JsonMapper, clock: Clock, meters: MeterRegistry, traces: Traces) =
+        Webhooks(db, merchants, json, clock, meters, traces)
 
     /** The merchants' gRPC API (payments.grpc.port; 0 picks a free port, for the tests). */
     @Bean
@@ -89,7 +110,12 @@ class PaymentsApplication {
         MerchantApi(payments, writes, merchants, json, kafka)
 
     @Bean
-    fun grpcServer(@Value("\${payments.grpc.port:9090}") port: Int, api: MerchantApi, merchants: Merchants) = GrpcServer(port, api, merchants)
+    fun grpcServer(
+        @Value("\${payments.grpc.port:9090}") port: Int,
+        api: MerchantApi,
+        merchants: Merchants,
+        observations: ObjectProvider<ObservationRegistry>,
+    ) = GrpcServer(port, api, merchants, observations.getIfAvailable { ObservationRegistry.NOOP })
 
     @Bean
     fun writes(payments: Payments, payouts: Payouts, idem: Idempotency, json: JsonMapper) = Writes(payments, payouts, idem, json)
@@ -102,7 +128,11 @@ class PaymentsApplication {
         @Value("\${payments.worker.poll-ms}") pollMs: Long,
         @Value("\${payments.worker.parallelism}") parallelism: Int,
         meters: MeterRegistry,
-    ) = Worker(payments, payouts, webhooks, pollMs, parallelism, meters)
+        traces: Traces,
+    ) = Worker(payments, payouts, webhooks, pollMs, parallelism, meters, traces)
+
+    @Bean
+    fun backlog(db: JdbcClient, meters: MeterRegistry) = Backlog(db, meters)
 
     @Bean
     fun reconcile(db: JdbcClient, tx: TransactionTemplate, ledger: LedgerOps, accounts: SystemAccounts, banks: Banks) =

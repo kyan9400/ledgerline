@@ -1,0 +1,245 @@
+{
+  "ok": true,
+  "scenarios": [
+    {
+      "scenario": "baseline",
+      "fault_seconds": 480,
+      "expected": [],
+      "missed": [],
+      "carried_over": [],
+      "consequences": [],
+      "unexpected": [],
+      "alerts": {}
+    },
+    {
+      "scenario": "ledger-down",
+      "fault_seconds": 183,
+      "expected": [
+        "ServiceDown",
+        "PaymentsNotFinishing"
+      ],
+      "missed": [],
+      "carried_over": [],
+      "consequences": [
+        "LoadShedding"
+      ],
+      "unexpected": [],
+      "alerts": {
+        "ServiceDown": {
+          "severity": "page",
+          "fired_after_s": 89,
+          "cleared_after_fault_s": 16,
+          "labels": [
+            "{\"job\": \"ledger\"}"
+          ]
+        },
+        "PaymentsNotFinishing": {
+          "severity": "page",
+          "fired_after_s": 139,
+          "cleared_after_fault_s": 136,
+          "labels": [
+            "{\"entity\": \"payment\"}"
+          ]
+        },
+        "LoadShedding": {
+          "severity": "ticket",
+          "fired_after_s": 529,
+          "cleared_after_fault_s": 366,
+          "labels": [
+            "{\"job\": \"payments\"}"
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "kafka-down",
+      "fault_seconds": 181,
+      "expected": [
+        "OutboxLagging"
+      ],
+      "missed": [],
+      "carried_over": [],
+      "consequences": [],
+      "unexpected": [],
+      "alerts": {
+        "OutboxLagging": {
+          "severity": "ticket",
+          "fired_after_s": 101,
+          "cleared_after_fault_s": 20,
+          "labels": [
+            "{\"job\": \"ledger\"}",
+            "{\"job\": \"payments\"}"
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "fraud-down",
+      "fault_seconds": 242,
+      "expected": [
+        "ServiceDown",
+        "FraudScorerFailingOpen"
+      ],
+      "missed": [],
+      "carried_over": [],
+      "consequences": [],
+      "unexpected": [],
+      "alerts": {
+        "ServiceDown": {
+          "severity": "page",
+          "fired_after_s": 87,
+          "cleared_after_fault_s": 15,
+          "labels": [
+            "{\"job\": \"fraud\"}"
+          ]
+        },
+        "FraudScorerFailingOpen": {
+          "severity": "ticket",
+          "fired_after_s": 157,
+          "cleared_after_fault_s": 285,
+          "labels": [
+            "{}"
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "webhooks-down",
+      "fault_seconds": 420,
+      "expected": [
+        "WebhooksFailing"
+      ],
+      "missed": [],
+      "carried_over": [
+        "LoadShedding"
+      ],
+      "consequences": [],
+      "unexpected": [],
+      "alerts": {
+        "WebhooksFailing": {
+          "severity": "ticket",
+          "fired_after_s": 328,
+          "cleared_after_fault_s": 228,
+          "labels": [
+            "{}"
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "books-wrong",
+      "fault_seconds": 43,
+      "expected": [
+        "LedgerBooksWrong"
+      ],
+      "missed": [],
+      "carried_over": [
+        "WebhooksFailing"
+      ],
+      "consequences": [],
+      "unexpected": [],
+      "alerts": {
+        "LedgerBooksWrong": {
+          "severity": "page",
+          "fired_after_s": 45,
+          "cleared_after_fault_s": 82,
+          "labels": [
+            "{}"
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "postgres-down",
+      "fault_seconds": 121,
+      "expected": [
+        "DatabaseUnreachable"
+      ],
+      "missed": [],
+      "carried_over": [],
+      "consequences": [
+        "ApiErrorBudgetBurn",
+        "ApiErrorBudgetBurnSlow",
+        "ApiLatencyBudgetBurn",
+        "LoadShedding"
+      ],
+      "unexpected": [],
+      "alerts": {
+        "DatabaseUnreachable": {
+          "severity": "page",
+          "fired_after_s": 49,
+          "cleared_after_fault_s": 8,
+          "labels": [
+            "{\"job\": \"ledger\"}",
+            "{\"job\": \"payments\"}"
+          ]
+        },
+        "ApiErrorBudgetBurnSlow": {
+          "severity": "ticket",
+          "fired_after_s": 69,
+          "cleared_after_fault_s": 939,
+          "labels": [
+            "{}"
+          ]
+        },
+        "ApiErrorBudgetBurn": {
+          "severity": "page",
+          "fired_after_s": 99,
+          "cleared_after_fault_s": 279,
+          "labels": [
+            "{}"
+          ]
+        },
+        "ApiLatencyBudgetBurn": {
+          "severity": "page",
+          "fired_after_s": 139,
+          "cleared_after_fault_s": 249,
+          "labels": [
+            "{}"
+          ]
+        },
+        "LoadShedding": {
+          "severity": "ticket",
+          "fired_after_s": 340,
+          "cleared_after_fault_s": 329,
+          "labels": [
+            "{\"job\": \"payments\"}"
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "slow-ledger",
+      "fault_seconds": 901,
+      "expected": [
+        "DependencySlow"
+      ],
+      "missed": [],
+      "carried_over": [
+        "ApiErrorBudgetBurnSlow"
+      ],
+      "consequences": [
+        "ApiLatencyBudgetBurn"
+      ],
+      "unexpected": [],
+      "alerts": {
+        "ApiLatencyBudgetBurn": {
+          "severity": "page",
+          "fired_after_s": 504,
+          "cleared_after_fault_s": 233,
+          "labels": [
+            "{}"
+          ]
+        },
+        "DependencySlow": {
+          "severity": "ticket",
+          "fired_after_s": 754,
+          "cleared_after_fault_s": 163,
+          "labels": [
+            "{\"peer_service\": \"ledger\"}"
+          ]
+        }
+      }
+    }
+  ]
+}
