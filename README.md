@@ -412,7 +412,10 @@ trace 8aee4945…: 27 spans over 2.348 s
   headers, and in the ledger's outbox (over HTTP, in another service).
 - **From a metric to a trace.** The latency histograms carry the trace id of a sampled request
   (exemplars): a slow dot on the latency chart opens its trace. Tempo also draws the service graph from
-  the spans.
+  the spans: it has a node per service that sends them, so payments, the ledger and the fraud scorer are
+  on it, and the simulated bank — a stand-in for someone else's system, which is why it isn't traced —
+  is watched in the dependency panels instead (`peer.service` on each outgoing call), where its latency
+  and the calls it doesn't answer show.
 
 **Two dashboards**, provisioned from [`dashboards.py`](deploy/observability/grafana/dashboards.py) (CI
 checks the JSON is what it makes): the overview (SLOs, what is firing, traffic, latency, errors, the
