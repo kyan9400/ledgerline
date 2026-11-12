@@ -294,9 +294,11 @@ other method, and ClickHouse's own query interface get a 404 from outside.
 - the books from ClickHouse alone: by kind of account, summing to zero;
 - the pipeline's lag.
 
-Each chart can be shown as a table. Both themes are designed: the colours are a validated palette, in
-fixed order, with light and dark steps chosen separately
-([dark](docs/screenshots/dashboard-dark.png)). It works down to a phone's width.
+Each chart can be shown as a table. It is dark by default, an operations console, with a light theme a
+click away ([light](docs/screenshots/dashboard-light.png)); the series colours keep a fixed order, with
+light and dark steps chosen separately. Status reads at a glance (the books balanced, the pipeline's
+lag, payout outcomes as coloured pills), each headline number has its trend, and it works down to a
+phone's width. It loads nothing from outside the page: system fonts, inline icons, a strict CSP.
 
 ## Merchants
 

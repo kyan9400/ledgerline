@@ -1,70 +1,80 @@
-/* Tokens: the validated reference palette (categorical slots in fixed order; light and dark both
-   selected, not flipped). Charts read these at draw time, so a theme change repaints them. */
+/* Tokens. Dark is the default (an operations console); light is a choice, kept per viewer. Charts read
+   these at draw time, so a theme change repaints them. Categorical series in a fixed order. */
 :root {
-  color-scheme: light;
-  --page: #f9f9f7;
-  --surface: #fcfcfb;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --muted: #898781;
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --ring: rgba(11, 11, 11, 0.1);
-  --series-1: #2a78d6;
-  --series-2: #eb6834;
-  --series-3: #1baf7a;
-  --good: #0ca30c;
-  --good-ink: #006300;
-  --critical: #d03b3b;
-  --accent: #2a78d6;
-}
-@media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) {
-    color-scheme: dark;
-    --page: #0d0d0d;
-    --surface: #1a1a19;
-    --ink: #f0efec;
-    --ink-2: #c3c2b7;
-    --muted: #898781;
-    --grid: #2c2c2a;
-    --axis: #383835;
-    --ring: rgba(255, 255, 255, 0.1);
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
-    --good: #0ca30c;
-    --good-ink: #0ca30c;
-    --critical: #e66767;
-    --accent: #3987e5;
-  }
-}
-:root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #0d0d0d;
-  --surface: #1a1a19;
-  --ink: #f0efec;
-  --ink-2: #c3c2b7;
-  --muted: #898781;
-  --grid: #2c2c2a;
-  --axis: #383835;
-  --ring: rgba(255, 255, 255, 0.1);
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --series-3: #199e70;
-  --good: #0ca30c;
-  --good-ink: #0ca30c;
-  --critical: #e66767;
-  --accent: #3987e5;
+  --page: #080c16;
+  --page-glow: rgba(56, 116, 255, 0.12);
+  --surface: #0f1626;
+  --surface-2: #131c2f;
+  --raise: #182339;
+  --ink: #e7edf7;
+  --ink-2: #a9b6cb;
+  --muted: #8191aa;
+  --grid: rgba(148, 163, 184, 0.10);
+  --axis: rgba(148, 163, 184, 0.28);
+  --ring: rgba(148, 163, 184, 0.16);
+  --ring-strong: rgba(148, 163, 184, 0.30);
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.25);
+  --series-1: #4f8ff7;
+  --series-2: #f97a3d;
+  --series-3: #a78bfa;
+  --accent: #4f8ff7;
+  --accent-soft: rgba(79, 143, 247, 0.14);
+  --good: #34d399;
+  --good-ink: #4ade80;
+  --good-soft: rgba(52, 211, 153, 0.13);
+  --warn: #fbbf24;
+  --warn-soft: rgba(251, 191, 36, 0.13);
+  --critical: #f87171;
+  --critical-soft: rgba(248, 113, 113, 0.14);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #f4f6fb;
+  --page-glow: rgba(37, 99, 235, 0.07);
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --raise: #eef2f8;
+  --ink: #0f172a;
+  --ink-2: #475569;
+  --muted: #5b6b82;
+  --grid: #e8edf4;
+  --axis: #cbd5e1;
+  --ring: #e2e8f0;
+  --ring-strong: #cbd5e1;
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 20px rgba(15, 23, 42, 0.05);
+  --series-1: #2563eb;
+  --series-2: #ea580c;
+  --series-3: #7c3aed;
+  --accent: #2563eb;
+  --accent-soft: rgba(37, 99, 235, 0.09);
+  --good: #16a34a;
+  --good-ink: #15803d;
+  --good-soft: rgba(22, 163, 74, 0.10);
+  --warn: #b45309;
+  --warn-soft: rgba(217, 119, 6, 0.11);
+  --critical: #dc2626;
+  --critical-soft: rgba(220, 38, 38, 0.09);
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
-  background: var(--page);
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 520px at 15% -10%, var(--page-glow), transparent 70%),
+    radial-gradient(900px 420px at 100% 0%, var(--page-glow), transparent 70%),
+    var(--page);
+  background-attachment: fixed;
   color: var(--ink);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "SF Pro Text", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-.num { font-variant-numeric: tabular-nums; }
+.num, .mono { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1, "zero" 1; }
+.mono { font-family: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace; }
 button { font: inherit; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

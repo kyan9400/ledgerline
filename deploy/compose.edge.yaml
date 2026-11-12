@@ -36,8 +36,47 @@ services:
       - --query.timeout=20s
       - --query.max-samples=5000000
 
-  # A little traffic, so the charts move: a flow (a payment, a transfer, a payout) every 20 s or so, in
-  # hour-long runs. The disk is small and shared: below 1.5 GB free it waits instead.
+  # Shoppers, so the charts look like a shop's day: the fraud simulator's customers (six of them, about a
+  # payment every ten seconds between them) at eight merchants, and a stolen card every five minutes
+  # (card testing, a takeover, a single large hit) for the scorer to catch. Hour-long runs, a new seed
+  # each; the disk is small and shared, so below 1.5 GB free it waits instead.
+  demo-shoppers:
+    image: ledgerline-fraud:${LEDGERLINE_VERSION:-latest}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          free=$$(df -m / | awk 'NR==2 {print $$4}')
+          if [ "$$free" -gt 1500 ]; then
+            SEED=$$(date +%s) python -m fraud.sim > /dev/null 2>&1
+          else
+            echo "$$(date) only $$free MB free: waiting"; sleep 600
+          fi
+        done
+    cpus: 0.25
+    mem_limit: 192m
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+    environment:
+      PAYMENTS: http://payments:8080
+      LEDGER: http://ledger:8080
+      MINUTES: "60"
+      CUSTOMERS: "6"
+      MERCHANTS: "8"
+      EPISODE_EVERY_S: "300"
+      OUT: /tmp/truth.jsonl
+      PYTHONDONTWRITEBYTECODE: "1"
+    depends_on:
+      payments: { condition: service_healthy }
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [internal]
+
+  # The rest of what the dashboard shows: payouts to the other bank, refunds, voids, in a trickle (a
+  # flow every 20 s or so), in hour-long runs, waiting too when the disk is low.
   demo-traffic:
     image: ledgerline-checker:${LEDGERLINE_VERSION:-latest}
     entrypoint: ["/bin/sh", "-c"]
