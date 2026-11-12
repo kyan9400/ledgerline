@@ -248,6 +248,15 @@ declining as they pay ([`eval/fraud/live.json`](eval/fraud/live.json)):
 - **Killing the scorer** is a chaos scenario: payments go on unscored while it is down, then it rebuilds
   and scores again. Nothing else changes.
 
+**The [live demo](https://ledgerline.149-36-1-90.sslip.io/) enforces too**, against the same simulator,
+and it is measured the same way ([`eval/demo/fraud-live.json`](eval/demo/fraud-live.json), 909 attempts):
+78.8% of fraud blocked and 61.7% of the fraud money, 0.45% of genuine payments declined, and **98.4% of
+the declines really were fraud**, so the dashboard's "kept from thieves" is what it says. Card testing was
+stopped 99.4% of the time, and 19 of 37 stolen cards at their very first attempt. The same weakness shows
+as offline: 16.7% of genuine splurges were declined, against 0% of ordinary payments and 0% of first
+visits to a new merchant. The demo's traffic is about a tenth fraud, far more than a real platform sees,
+so that the panels have something to show.
+
 ## Analytics
 
 ![The dashboard](docs/screenshots/dashboard.png)

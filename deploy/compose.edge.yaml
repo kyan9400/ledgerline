@@ -37,9 +37,14 @@ services:
       - --query.max-samples=5000000
 
   # Shoppers, so the charts look like a shop's day: the fraud simulator's customers (six of them, about a
-  # payment every ten seconds between them) at eight merchants, and a stolen card every five minutes
-  # (card testing, a takeover, a single large hit) for the scorer to catch. Hour-long runs, a new seed
-  # each; the disk is small and shared, so below 1.5 GB free it waits instead.
+  # payment every ten seconds between them) at eight merchants, and now and then a stolen card (card
+  # testing, a takeover, a single large hit) for the scorer to catch. Hour-long runs, a new seed each;
+  # the disk is small and shared, so below 1.5 GB free it waits instead.
+  #
+  # A stolen card every 20 minutes puts about 8% of the attempts in fraud's hands: far more than a real
+  # platform sees, but a demo with real-world rates would show an empty fraud panel all day. Measured
+  # against the simulator's truth at one episode every 5 minutes (eval/demo/fraud-live.json): 78.8% of
+  # fraud attempts blocked, 0.45% of genuine payments declined, 98.4% of the declines really fraud.
   demo-shoppers:
     image: ledgerline-fraud:${LEDGERLINE_VERSION:-latest}
     entrypoint: ["/bin/sh", "-c"]
@@ -64,7 +69,7 @@ services:
       MINUTES: "60"
       CUSTOMERS: "6"
       MERCHANTS: "8"
-      EPISODE_EVERY_S: "300"
+      EPISODE_EVERY_S: "1200"
       OUT: /tmp/truth.jsonl
       PYTHONDONTWRITEBYTECODE: "1"
     depends_on:
