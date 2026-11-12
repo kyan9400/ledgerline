@@ -1,7 +1,20 @@
 # The dashboard: the built Vue app, and /api/* to ClickHouse's fixed, read-only endpoints as the
-# dashboard user. Nothing else of ClickHouse is reachable through here.
+# dashboard user. Nothing else of ClickHouse is reachable through here. And Grafana under /grafana/, for
+# anonymous viewers only: no login, no admin or user APIs, no credentials passed on (the admin uses
+# Grafana's own port, through an SSH tunnel).
 :80 {
 	encode zstd gzip
+
+	@grafanaClosed path /grafana/login* /grafana/logout* /grafana/api/admin* /grafana/api/users* /grafana/api/user/* /grafana/api/org* /grafana/api/orgs* /grafana/api/auth* /grafana/api/serviceaccounts* /grafana/api/snapshots* /grafana/api/dashboards/db* /grafana/explore*
+	handle @grafanaClosed {
+		respond 404
+	}
+	handle /grafana* {
+		reverse_proxy grafana:3000 {
+			header_up -Authorization
+			header_up -Cookie
+		}
+	}
 
 	@api {
 		method GET
@@ -23,10 +36,11 @@
 		try_files {path} /index.html
 		file_server
 		header /assets/* Cache-Control "public, max-age=31536000, immutable"
+		# The app's own policy (Grafana, above, sets its own).
+		header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
 	}
 
 	header {
-		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
 		X-Content-Type-Options nosniff
 		Referrer-Policy no-referrer
 		-Server

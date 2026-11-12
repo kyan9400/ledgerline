@@ -1,0 +1,75 @@
+# The public, read-only demo, on top of compose.yaml (and chaos.yaml): for a host where another Compose
+# project's proxy owns ports 80/443. The dashboard joins that proxy's network, where it is
+# ledgerline-web:80; its site block is then just:
+#
+#   ledgerline.example.com { reverse_proxy ledgerline-web:80 }
+#
+#   docker network create edge        # once
+#   docker compose -f deploy/compose.yaml -f deploy/chaos.yaml -f deploy/compose.edge.yaml --env-file deploy/.env up -d
+#
+# Public: the analytics dashboard, and Grafana under /grafana/ for anonymous viewers (the dashboard's
+# Caddy closes its login and admin APIs). The APIs that move money stay on the internal network.
+services:
+  dashboard:
+    networks:
+      internal: {}
+      edge:
+        aliases: [ledgerline-web]
+
+  grafana:
+    environment:
+      GF_SERVER_ROOT_URL: ${PUBLIC_URL:-http://localhost:18300}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # No sign-in on a public page (the dashboards come from files; the admin has the API, by tunnel).
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+
+  prometheus:
+    # Anyone may run a dashboard's queries now: keep each one small.
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=1GB
+      - --web.enable-remote-write-receiver
+      - --enable-feature=exemplar-storage
+      - --web.enable-lifecycle
+      - --query.timeout=20s
+      - --query.max-samples=5000000
+
+  # A little traffic, so the charts move: a flow (a payment, a transfer, a payout) every 20 s or so, in
+  # hour-long runs. The disk is small and shared: below 1.5 GB free it waits instead.
+  demo-traffic:
+    image: ledgerline-checker:${LEDGERLINE_VERSION:-latest}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          free=$$(df -m / | awk 'NR==2 {print $$4}')
+          if [ "$$free" -gt 1500 ]; then
+            DURATION_S=3600 RATE=$${DEMO_RATE:-0.05} DEADLINE_S=60 /app/bin/checker workload /tmp/demo.json > /dev/null 2>&1
+          else
+            echo "$$(date) only $$free MB free: waiting"; sleep 600
+          fi
+        done
+    cpus: 0.25
+    mem_limit: 256m
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+    environment:
+      PAYMENTS: http://payments:8080
+      LEDGER: http://ledger:8080
+      CUSTOMERS: "20"
+      MERCHANTS: "4"
+    depends_on:
+      payments: { condition: service_healthy }
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [internal]
+
+networks:
+  edge:
+    external: true
+    name: edge

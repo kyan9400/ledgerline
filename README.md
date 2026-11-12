@@ -6,20 +6,48 @@ it as state machines and sagas, and every change reaches Kafka through a transac
 written in Kotlin and Spring Boot on PostgreSQL and Kafka. Each property it promises is checked by tests
 that try hard to break it.
 
-> Work in progress: stages 1 to 7 of 8 are done (see [the plan](#roadmap)). All accounts and money in
-> it are made up.
+[![CI](https://github.com/kyan9400/ledgerline/actions/workflows/ci.yml/badge.svg)](https://github.com/kyan9400/ledgerline/actions/workflows/ci.yml)
+&nbsp;**Live:** [the analytics dashboard](https://ledgerline.149-36-1-90.sslip.io/) and
+[Grafana](https://ledgerline.149-36-1-90.sslip.io/grafana/d/overview) (read-only; a little made-up
+traffic keeps them moving) · **[The write-up](docs/writeup.md)** · **[A 30-second demo](docs/demo/ledgerline-demo.mp4)**
+
+![The ledger stopped for two and a half minutes under load, then back: the backlog grows, alerts fire, the worker finishes everything](docs/demo/ledgerline-outage.gif)
+
+*The ledger stopped for two and a half minutes under load (a time-lapse of Grafana): payments still get
+an answer and wait, the alerts fire, and when the ledger is back the worker finishes every step, once.*
+
+**What it shows, measured:**
+
+- **Nothing lost or done twice** over 11 chaos scenarios and 40,461 requests (4,188 sent twice at once):
+  services, PostgreSQL and Kafka killed, networks cut, answers cut off mid-way. A checker proves it from
+  the client's log, the databases and Kafka alone ([Chaos](#chaos)).
+- **The ledger:** ~430 transfers a second on one CPU, shedding the excess instead of falling over;
+  **card payments:** 70–75 a second, limited by PostgreSQL, after sharding the hottest row ([Measured](#measured)).
+- **Fraud:** a LightGBM model on features kept from Kafka caught 88% of fraud at 0.7% false declines,
+  against 37% for tuned rules; live, enforcing, 91.9% ([Fraud](#fraud)).
+- **Analytics** from ClickHouse, fed by Kafka, agreeing with the ledger to the kopeck ([Analytics](#analytics)).
+- **Merchants:** a gRPC API, signed webhooks, a TypeScript SDK; 1,085 of 1,085 changes heard while the
+  service was killed mid-payment ([Merchants](#merchants)).
+- **Run like production:** traces that follow a payment through the outbox, the worker and webhooks;
+  SLO and cause alerts, each proven to fire by breaking what it watches ([Observability](#observability)).
+
+All accounts, customers and money in it are made up.
 
 ```
-               ┌────────────────┐  HTTP + idempotency keys  ┌────────────────┐
-  clients ────▶│    payments    │──────────────────────────▶│     ledger     │◀──── clients
-               │ state machines │                           │  double entry  │
-               │ sagas, worker  │──▶ otherbank (simulated)  │   event log    │
-               └───────┬────────┘                           └───────┬────────┘
-                       │ outbox                                     │ outbox
-                       ▼                                            ▼
-               ┌──────────────────────────── Kafka ─────────────────────────────┐
-               │  payments.events (by payment)        ledger.events (by account) │
-               └─────────────────────────────────────────────────────────────────┘
+  merchants ── gRPC ──▶ ┌────────────────┐  HTTP + idempotency keys  ┌────────────────┐
+  clients ─── HTTP ───▶ │    payments    │──────────────────────────▶│     ledger     │◀── clients
+                        │ state machines │──▶ fraud scorer (Python)  │  double entry  │
+                        │ sagas, worker  │──▶ otherbank (simulated)  │   event log    │
+                        └──┬──────────┬──┘                           └───────┬────────┘
+       webhooks (signed) ◀─┘          │ outbox                               │ outbox
+                                      ▼                                      ▼
+                        ┌──────────────────────────── Kafka ───────────────────────────────┐
+                        │  payments.events (by payment)            ledger.events (by account) │
+                        └──────┬──────────────────────┬────────────────────────────────────┘
+                               ▼                      ▼
+                  the fraud scorer's features   ClickHouse ──▶ the dashboard (Vue)
+
+  traces ──▶ Tempo    metrics ──▶ Prometheus ──▶ Alertmanager    Grafana over both
 ```
 
 ## The ledger
@@ -664,7 +692,13 @@ sdk/Dockerfile -t ledgerline-shop .`). A merchant of your own: `POST /internal/m
 on the payments service gives its API key and webhook secret, once.
 
 Grafana listens on the host's loopback too (port 18300): `ssh -L 18300:127.0.0.1:18300 <host>`, then
-`http://localhost:18300` (anyone may look; admin's password is `GRAFANA_ADMIN_PASSWORD`). The alert
+`http://localhost:18300` (anyone may look; admin's password is `GRAFANA_ADMIN_PASSWORD`).
+
+The public demo adds [`compose.edge.yaml`](deploy/compose.edge.yaml): the dashboard joins another
+project's reverse proxy (the host's ports 80/443 are taken), Grafana moves under `/grafana/` with its
+login and admin APIs closed, and a little traffic keeps the charts moving (it waits when the disk is low).
+The demo video is made by [`docs/demo/record.mjs`](docs/demo/record.mjs) against it, which stops the
+ledger for two and a half minutes under load. The alert
 evaluation: `chaos/alerts.sh` (all scenarios, about 80 minutes) or `chaos/alerts.sh kafka-down` (one).
 Any trace, as text: `scripts/trace.py <trace id>`, or `--search '{ name = "payment step" }'`.
 
@@ -710,4 +744,4 @@ Prometheus 3.15, Alertmanager 0.34 and Grafana 13.
 | 5. Analytics | done: ClickHouse fed from Kafka, proven to agree with the ledger; a Vue 3 dashboard |
 | 6. Merchants | done: a gRPC API, signed webhooks, a TypeScript SDK, proven end to end while things break |
 | 7. Production | done: traces that follow a payment through the outbox, the worker and webhooks; Grafana; SLO and cause alerts, each proven to fire by breaking what it watches |
-| 8. Publishing | Demo, write-up |
+| 8. Publishing | done: a live read-only demo, a recorded demo, the write-up, the repository public |

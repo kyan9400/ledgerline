@@ -114,6 +114,10 @@ const reason = (r: string) => r.replaceAll("_", " ").replaceAll(":", ": ");
         <p>Card payments, fraud, payouts and the books, from ClickHouse fed by Kafka.</p>
       </div>
       <div class="controls">
+        <nav class="links" aria-label="More">
+          <a href="/grafana/d/overview">Grafana: SLOs and alerts</a>
+          <a href="https://github.com/kyan9400/ledgerline">Source</a>
+        </nav>
         <div class="seg" role="radiogroup" aria-label="Time window">
           <button v-for="w in WINDOWS" :key="w.minutes" role="radio" :aria-checked="minutes === w.minutes"
                   :class="{ on: minutes === w.minutes }" @click="minutes = w.minutes">{{ w.label }}</button>
@@ -232,6 +236,9 @@ h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
 h1 span { color: var(--ink-2); font-weight: 500; }
 .brand p { margin: 4px 0 0; color: var(--ink-2); }
 .controls { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.links { display: flex; gap: 14px; font-size: 13px; }
+.links a { color: var(--ink-2); text-decoration: none; border-bottom: 1px solid var(--ring); }
+.links a:hover { color: var(--ink); }
 .seg { display: inline-flex; border: 1px solid var(--ring); border-radius: 8px; padding: 2px; background: var(--surface); }
 .seg button { border: 0; background: transparent; color: var(--ink-2); padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .seg button.on { background: var(--page); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--ring); }
