@@ -254,8 +254,8 @@ and it is measured the same way ([`eval/demo/fraud-live.json`](eval/demo/fraud-l
 the declines really were fraud**, so the dashboard's "kept from thieves" is what it says. Card testing was
 stopped 99.4% of the time, and 19 of 37 stolen cards at their very first attempt. The same weakness shows
 as offline: 16.7% of genuine splurges were declined, against 0% of ordinary payments and 0% of first
-visits to a new merchant. The demo's traffic is about a tenth fraud, far more than a real platform sees,
-so that the panels have something to show.
+visits to a new merchant. About 4% of the demo's attempts are fraud (3% of its payments are declined as
+such, over six hours), far more than a real platform sees, so that the panels have something to show.
 
 ## Analytics
 
